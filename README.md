@@ -6,8 +6,8 @@ This provider allows you to manage complete Monad data pipelines using Terraform
 
 - **Pipeline Management**: Create and manage data pipelines with nodes and conditional logic
 - **Secret Management**: Securely store and reference organization secrets
-- **Input Connectors**: Configure data sources including demo generators and Okta System Logs
-- **Output Connectors**: Configure data destinations including HTTP webhooks and PostgreSQL databases
+- **Input Connectors**: Configure data sources with flexible input configurations
+- **Output Connectors**: Configure data destinations with flexible output configurations
 - **Unified API**: Uses Monad's V2 APIs for modern resource management
 
 ## Usage
@@ -39,26 +39,28 @@ resource "monad_secret" "webhook_token" {
   value = var.webhook_token
 }
 
-# Configure a demo input for testing
-resource "monad_input_demo" "test_events" {
+# Configure an input for testing
+resource "monad_input" "test_events" {
   name        = "demo-generator"
   description = "Generate test events for pipeline"
+  type        = "demo"
 
   config {
-    settings {
+    settings = {
       record_type = "event"
       rate        = 10  # Records per second
     }
   }
 }
 
-# Configure HTTP output destination
-resource "monad_output_http" "webhook" {
+# Configure an output destination
+resource "monad_output" "webhook" {
   name        = "webhook-output"
   description = "Send events to external webhook"
+  type        = "http"
 
   config {
-    settings {
+    settings = {
       endpoint             = "https://api.example.com/webhooks/events"
       method              = "POST"
       headers = {
@@ -72,7 +74,7 @@ resource "monad_output_http" "webhook" {
       tls_skip_verify       = false
     }
 
-    secrets {
+    secrets = {
       auth_headers = {
         "Authorization" = "Bearer ${monad_secret.webhook_token.reference}"
       }
@@ -90,12 +92,12 @@ resource "monad_pipeline" "demo_pipeline" {
     {
       id   = "input"
       type = "input"
-      input_id = monad_input_demo.test_events.id
+      input_id = monad_input.test_events.id
     },
     {
       id   = "output"
       type = "output"
-      output_id = monad_output_http.webhook.id
+      output_id = monad_output.webhook.id
     }
   ]
 
@@ -117,16 +119,17 @@ resource "monad_secret" "okta_api_key" {
   value = var.okta_api_key
 }
 
-resource "monad_input_okta_systemlog" "audit_logs" {
+resource "monad_input" "audit_logs" {
   name        = "okta-audit-logs"
   description = "Collect Okta system audit logs"
+  type        = "okta_systemlog"
 
   config {
-    settings {
+    settings = {
       organization_url = "https://yourorg.okta.com"
     }
 
-    secrets {
+    secrets = {
       api_key = monad_secret.okta_api_key.reference
     }
   }
@@ -136,12 +139,13 @@ resource "monad_input_okta_systemlog" "audit_logs" {
 ### PostgreSQL Output Example
 
 ```hcl
-resource "monad_output_postgresql" "database" {
+resource "monad_output" "database" {
   name        = "postgres-logs"
   description = "Store events in PostgreSQL database"
+  type        = "postgresql"
 
   config {
-    settings {
+    settings = {
       host         = "localhost"
       port         = 5432
       database     = "events"
@@ -150,7 +154,7 @@ resource "monad_output_postgresql" "database" {
       column_names = ["timestamp", "event_type", "actor", "target"]
     }
 
-    secrets {
+    secrets = {
       password = var.db_password
     }
   }
@@ -214,66 +218,27 @@ Manages data pipelines that connect inputs to outputs with conditional logic.
   - `from` (string, required) - Source node ID
   - `to` (string, required) - Destination node ID
 
-### monad_input_demo
+### monad_input
 
-Event generator for testing and development.
-
-- `name` (string, required) - Name of the input
-- `description` (string, optional) - Description of the input
-- `config` (block, optional) - Demo input configuration
-  - `settings` (block, optional) - Demo settings
-    - `record_type` (string, required) - Type of records to generate
-    - `rate` (number, required) - Generation rate (1-1000 records/second)
-
-### monad_input_okta_systemlog
-
-Okta System Audit Logs integration.
+Generic input connector for data sources.
 
 - `name` (string, required) - Name of the input
 - `description` (string, optional) - Description of the input
-- `config` (block, optional) - Okta configuration
-  - `settings` (block, optional) - Okta settings
-    - `organization_url` (string, required) - Okta organization URL
-  - `secrets` (block, optional) - Okta secrets
-    - `api_key` (string, required, sensitive) - Okta API key
+- `type` (string, required) - Type of input connector (e.g., "demo", "okta_systemlog")
+- `config` (block, optional) - Input configuration
+  - `settings` (map, optional) - Type-specific settings
+  - `secrets` (map, optional, sensitive) - Type-specific secrets
 
-### monad_output_http
+### monad_output
 
-HTTP webhook output destination.
-
-- `name` (string, required) - Name of the output
-- `description` (string, optional) - Description of the output
-- `config` (block, optional) - HTTP configuration
-  - `settings` (block, optional) - HTTP settings
-    - `endpoint` (string, required) - HTTP endpoint URL
-    - `method` (string, optional) - HTTP method (default: POST)
-    - `headers` (map, optional) - Non-secret headers
-    - `max_batch_data_size` (number, optional) - Maximum batch size in KB
-    - `max_batch_record_count` (number, optional) - Maximum records per batch
-    - `payload_structure` (string, optional) - Payload structure type
-    - `rate_limit` (number, optional) - Requests per second limit
-    - `tls_skip_verify` (boolean, optional) - Skip TLS verification
-    - `wrapper_key` (string, optional) - Wrapper key for wrapped payloads
-  - `secrets` (block, optional) - HTTP secrets
-    - `auth_headers` (map, optional, sensitive) - Authentication headers
-
-### monad_output_postgresql
-
-PostgreSQL database output destination.
+Generic output connector for data destinations.
 
 - `name` (string, required) - Name of the output
 - `description` (string, optional) - Description of the output
-- `config` (block, optional) - PostgreSQL configuration
-  - `settings` (block, optional) - PostgreSQL settings
-    - `host` (string, required) - Database host
-    - `port` (number, optional) - Database port (default: 5432)
-    - `database` (string, required) - Database name
-    - `table` (string, required) - Table name
-    - `user` (string, required) - Database user
-    - `column_names` (list, optional) - Column names for data
-  - `secrets` (block, optional) - PostgreSQL secrets
-    - `connection_string` (string, optional, sensitive) - Complete connection string
-    - `password` (string, optional, sensitive) - Database password
+- `type` (string, required) - Type of output connector (e.g., "http", "postgresql")
+- `config` (block, optional) - Output configuration
+  - `settings` (map, optional) - Type-specific settings
+  - `secrets` (map, optional, sensitive) - Type-specific secrets
 
 ## Import
 
@@ -287,10 +252,8 @@ terraform import monad_secret.example secret-id-here
 terraform import monad_pipeline.example pipeline-id-here
 
 # Import inputs
-terraform import monad_input_demo.example input-id-here
-terraform import monad_input_okta_systemlog.example input-id-here
+terraform import monad_input.example input-id-here
 
 # Import outputs
-terraform import monad_output_http.example output-id-here
-terraform import monad_output_postgresql.example output-id-here
+terraform import monad_output.example output-id-here
 ```
