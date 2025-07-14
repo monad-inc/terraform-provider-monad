@@ -23,6 +23,30 @@ provider "monad" {
   organization_id = var.organization_id
 }
 
+resource "monad_input" "demo_input_generic" {
+  name        = "Terraform Example Generic Input"
+  description = "Terraform Example Generic input for Monad"
+  component_type = "demo"
+
+  config {
+    settings = {
+      record_type = "jira_users"
+      rate        = 5
+    }
+    secrets = {
+      api_key = {
+        id = monad_secret.secret.id
+      }
+    }
+  }
+}
+
+resource "monad_output" "demo_output_generic" {
+  name        = "Terraform Example Generic Output"
+  description = "Terraform Example Generic output for Monad"
+  component_type = "dev-null"
+}
+
 resource "monad_secret" "secret" {
   name        = "Terraform Example Secret"
   description = "Terraform Example Secret for Monad"

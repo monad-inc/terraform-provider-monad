@@ -132,12 +132,16 @@ func (r *ResourceOutputPostgreSQL) Schema(
 	}
 }
 
+func (m *ResourceOutputPostgreSQLModel) GetComponentSubType() string {
+	return "postgresql"
+}
+
 func (m *ResourceOutputPostgreSQLModel) GetBaseModel() *BaseConnectorModel {
 	return &m.BaseConnectorModel
 }
 
-func (m *ResourceOutputPostgreSQLModel) GetSettingsAndSecrets() BaseConnectorConfig {
-	config := BaseConnectorConfig{
+func (m *ResourceOutputPostgreSQLModel) GetSettingsAndSecrets(ctx context.Context) (*BaseConnectorConfig, error) {
+	config := &BaseConnectorConfig{
 		Settings: make(map[string]any),
 		Secrets:  make(map[string]any),
 	}
@@ -176,7 +180,7 @@ func (m *ResourceOutputPostgreSQLModel) GetSettingsAndSecrets() BaseConnectorCon
 		}
 	}
 
-	return config
+	return config, nil
 }
 
 func (m *ResourceOutputPostgreSQLModel) UpdateFromAPIResponse(output any) error {

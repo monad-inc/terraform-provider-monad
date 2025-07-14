@@ -90,12 +90,16 @@ func (r *ResourceInputDemo) Schema(
 	}
 }
 
+func (m *ResourceInputDemoModel) GetComponentSubType() string {
+	return "demo"
+}
+
 func (m *ResourceInputDemoModel) GetBaseModel() *BaseConnectorModel {
 	return &m.BaseConnectorModel
 }
 
-func (m *ResourceInputDemoModel) GetSettingsAndSecrets() BaseConnectorConfig {
-	config := BaseConnectorConfig{
+func (m *ResourceInputDemoModel) GetSettingsAndSecrets(ctx context.Context) (*BaseConnectorConfig, error) {
+	config := &BaseConnectorConfig{
 		Settings: make(map[string]any),
 		Secrets:  make(map[string]any),
 	}
@@ -109,7 +113,7 @@ func (m *ResourceInputDemoModel) GetSettingsAndSecrets() BaseConnectorConfig {
 		}
 	}
 
-	return config
+	return config, nil
 }
 
 func (m *ResourceInputDemoModel) UpdateFromAPIResponse(output any) error {

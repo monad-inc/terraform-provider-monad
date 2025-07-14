@@ -1,6 +1,10 @@
 package provider
 
 import (
+	"context"
+	"fmt"
+	"strings"
+
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -26,7 +30,16 @@ type ConnectorSecret struct {
 }
 
 type ConnectorResourceModel interface {
+	GetComponentSubType() string
 	GetBaseModel() *BaseConnectorModel
-	GetSettingsAndSecrets() BaseConnectorConfig
+	GetSettingsAndSecrets(ctx context.Context) (*BaseConnectorConfig, error)
 	UpdateFromAPIResponse(connector any) error
+}
+
+func getConnectorTypeName(providerTypeName, componentType, componentSubType string) string {
+	name := fmt.Sprintf("%s_%s", providerTypeName, componentType)
+	if componentSubType != "" {
+		name += "_" + componentSubType
+	}
+	return strings.ReplaceAll(name, "-", "_")
 }

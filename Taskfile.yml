@@ -10,14 +10,14 @@ tasks:
     dir: examples
     deps:
       - build
-    cmd: TF_LOG=DEBUG  terraform apply -auto-approve
+    cmd: terraform apply -auto-approve
 
   example-destroy:
     desc: "Run destroy on example terraform file in examples directory"
     dir: examples
     deps:
       - build
-    cmd: TF_LOG=DEBUG  terraform destroy -auto-approve
+    cmd: terraform destroy -auto-approve
 
   example-apply-and-destroy:
     desc: "Run apply and destroy on example terraform file in examples directory"

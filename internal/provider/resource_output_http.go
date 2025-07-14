@@ -159,12 +159,16 @@ func (r *ResourceOutputHTTP) Schema(
 	}
 }
 
+func (m *ResourceOutputHTTPModel) GetComponentSubType() string {
+	return "http"
+}
+
 func (m *ResourceOutputHTTPModel) GetBaseModel() *BaseConnectorModel {
 	return &m.BaseConnectorModel
 }
 
-func (m *ResourceOutputHTTPModel) GetSettingsAndSecrets() BaseConnectorConfig {
-	config := BaseConnectorConfig{
+func (m *ResourceOutputHTTPModel) GetSettingsAndSecrets(ctx context.Context) (*BaseConnectorConfig, error) {
+	config := &BaseConnectorConfig{
 		Settings: make(map[string]any),
 		Secrets:  make(map[string]any),
 	}
@@ -205,7 +209,7 @@ func (m *ResourceOutputHTTPModel) GetSettingsAndSecrets() BaseConnectorConfig {
 		}
 	}
 
-	return config
+	return config, nil
 }
 
 func (m *ResourceOutputHTTPModel) UpdateFromAPIResponse(output any) error {

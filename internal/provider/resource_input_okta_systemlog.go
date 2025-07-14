@@ -117,12 +117,16 @@ func (r *ResourceInputOktaSystemAuditLogs) Schema(
 	}
 }
 
+func (m *ResourceInputOktaSystemAuditLogsModel) GetComponentSubType() string {
+	return "okta-systemlog"
+}
+
 func (m *ResourceInputOktaSystemAuditLogsModel) GetBaseModel() *BaseConnectorModel {
 	return &m.BaseConnectorModel
 }
 
-func (m *ResourceInputOktaSystemAuditLogsModel) GetSettingsAndSecrets() BaseConnectorConfig {
-	config := BaseConnectorConfig{
+func (m *ResourceInputOktaSystemAuditLogsModel) GetSettingsAndSecrets(ctx context.Context) (*BaseConnectorConfig, error) {
+	config := &BaseConnectorConfig{
 		Settings: make(map[string]any),
 		Secrets:  make(map[string]any),
 	}
@@ -149,7 +153,7 @@ func (m *ResourceInputOktaSystemAuditLogsModel) GetSettingsAndSecrets() BaseConn
 		config.Secrets["api_key"] = apiKeySecret
 	}
 
-	return config
+	return config, nil
 }
 
 func (m *ResourceInputOktaSystemAuditLogsModel) UpdateFromAPIResponse(output any) error {
