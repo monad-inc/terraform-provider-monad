@@ -19,8 +19,6 @@ var _ provider.Provider = &MonadProvider{}
 var _ provider.ProviderWithFunctions = &MonadProvider{}
 var _ provider.ProviderWithEphemeralResources = &MonadProvider{}
 
-const version = "0.0.1"
-
 type MonadProvider struct {
 	version        string
 	organizationID string
@@ -111,10 +109,7 @@ func (p *MonadProvider) Configure(ctx context.Context, req provider.ConfigureReq
 }
 
 func (p *MonadProvider) Resources(ctx context.Context) []func() resource.Resource {
-	return []func() resource.Resource{
-		NewResourceOutputHTTP,
-		NewResourceOutputPostgreSQL,
-	}
+	return RegisteredConnectorResources
 }
 
 func (p *MonadProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
