@@ -18,6 +18,13 @@ type BaseConnectorConfig struct {
 	Secrets  map[string]any
 }
 
+type ConnectorSecret struct {
+	ID          types.String `tfsdk:"id"`
+	Name        types.String `tfsdk:"name"`
+	Description types.String `tfsdk:"description"`
+	Value       types.String `tfsdk:"value"`
+}
+
 type ConnectorResourceModel interface {
 	GetBaseModel() *BaseConnectorModel
 	GetSettingsAndSecrets() BaseConnectorConfig

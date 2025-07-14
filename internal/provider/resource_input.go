@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -30,7 +31,7 @@ func (r *BaseInputResource[T]) Metadata(
 	req resource.MetadataRequest,
 	resp *resource.MetadataResponse,
 ) {
-	resp.TypeName = req.ProviderTypeName + "_input_" + r.inputType
+	resp.TypeName = req.ProviderTypeName + "_input_" + strings.ReplaceAll(r.inputType, "-", "_")
 }
 
 func (r *BaseInputResource[T]) Configure(
@@ -92,14 +93,19 @@ func (r *BaseInputResource[T]) Create(
 		},
 	}
 
-	input, _, err := r.client.OrganizationInputsAPI.
+	input, monadResp, err := r.client.OrganizationInputsAPI.
 		V2OrganizationIdInputsPost(ctx, r.client.OrganizationID).
 		RoutesV2CreateInputRequest(request).
 		Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
-			fmt.Sprintf("Unable to create %s input, got error: %s", r.inputType, err),
+			fmt.Sprintf(
+				"Unable to create %s input, got error: %s. Response: %s",
+				r.inputType,
+				err,
+				getResponseBody(monadResp),
+			),
 		)
 		return
 	}
@@ -122,7 +128,7 @@ func (r *BaseInputResource[T]) Read(
 		return
 	}
 
-	output, _, err := r.client.OrganizationInputsAPI.
+	input, monadResp, err := r.client.OrganizationInputsAPI.
 		V1OrganizationIdInputsInputIdGet(
 			ctx,
 			r.client.OrganizationID,
@@ -132,16 +138,21 @@ func (r *BaseInputResource[T]) Read(
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
-			fmt.Sprintf("Unable to read %s input, got error: %s", r.inputType, err),
+			fmt.Sprintf(
+				"Unable to read %s input, got error: %s. Response: %s",
+				r.inputType,
+				err,
+				getResponseBody(monadResp),
+			),
 		)
 		return
 	}
 
-	data.GetBaseModel().ID = types.StringValue(*output.Id)
-	data.GetBaseModel().Name = types.StringValue(*output.Name)
-	data.GetBaseModel().Description = types.StringValue(*output.Description)
+	data.GetBaseModel().ID = types.StringValue(*input.Id)
+	data.GetBaseModel().Name = types.StringValue(*input.Name)
+	data.GetBaseModel().Description = types.StringValue(*input.Description)
 
-	if err := data.UpdateFromAPIResponse(output); err != nil {
+	if err := data.UpdateFromAPIResponse(input); err != nil {
 		resp.Diagnostics.AddError(
 			"Parse Error",
 			fmt.Sprintf("Unable to parse %s input response: %s", r.inputType, err),
@@ -179,7 +190,7 @@ func (r *BaseInputResource[T]) Update(
 		},
 	}
 
-	input, _, err := r.client.OrganizationInputsAPI.
+	input, monadResp, err := r.client.OrganizationInputsAPI.
 		V2OrganizationIdInputsInputIdPut(
 			ctx,
 			r.client.OrganizationID,
@@ -190,7 +201,12 @@ func (r *BaseInputResource[T]) Update(
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
-			fmt.Sprintf("Unable to update %s input, got error: %s", r.inputType, err),
+			fmt.Sprintf(
+				"Unable to update %s input, got error: %s. Response: %s",
+				r.inputType,
+				err,
+				getResponseBody(monadResp),
+			),
 		)
 		return
 	}
@@ -223,7 +239,7 @@ func (r *BaseInputResource[T]) Delete(
 		return
 	}
 
-	_, _, err := r.client.OrganizationInputsAPI.
+	_, monadResp, err := r.client.OrganizationInputsAPI.
 		V1OrganizationIdInputsInputIdDelete(
 			ctx,
 			r.client.OrganizationID,
@@ -233,7 +249,12 @@ func (r *BaseInputResource[T]) Delete(
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
-			fmt.Sprintf("Unable to delete %s input, got error: %s", r.inputType, err),
+			fmt.Sprintf(
+				"Unable to delete %s input, got error: %s. Response: %s",
+				r.inputType,
+				err,
+				getResponseBody(monadResp),
+			),
 		)
 		return
 	}

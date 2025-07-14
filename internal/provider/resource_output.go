@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -30,7 +31,7 @@ func (r *BaseOutputResource[T]) Metadata(
 	req resource.MetadataRequest,
 	resp *resource.MetadataResponse,
 ) {
-	resp.TypeName = req.ProviderTypeName + "_output_" + r.outputType
+	resp.TypeName = req.ProviderTypeName + "_output_" + strings.ReplaceAll(r.outputType, "-", "_")
 }
 
 func (r *BaseOutputResource[T]) Schema(
@@ -92,14 +93,19 @@ func (r *BaseOutputResource[T]) Create(
 		},
 	}
 
-	output, _, err := r.client.OrganizationOutputsAPI.
+	output, monadResp, err := r.client.OrganizationOutputsAPI.
 		V2OrganizationIdOutputsPost(ctx, r.client.OrganizationID).
 		RoutesV2CreateOutputRequest(request).
 		Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
-			fmt.Sprintf("Unable to create %s output, got error: %s", r.outputType, err),
+			fmt.Sprintf(
+				"Unable to create %s output, got error: %s. Response: %s",
+				r.outputType,
+				err,
+				getResponseBody(monadResp),
+			),
 		)
 		return
 	}
@@ -122,7 +128,7 @@ func (r *BaseOutputResource[T]) Read(
 		return
 	}
 
-	output, _, err := r.client.OrganizationOutputsAPI.
+	output, monadResp, err := r.client.OrganizationOutputsAPI.
 		V1OrganizationIdOutputsOutputIdGet(
 			ctx,
 			r.client.OrganizationID,
@@ -132,7 +138,12 @@ func (r *BaseOutputResource[T]) Read(
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
-			fmt.Sprintf("Unable to read %s output, got error: %s", r.outputType, err),
+			fmt.Sprintf(
+				"Unable to read %s output, got error: %s. Response: %s",
+				r.outputType,
+				err,
+				getResponseBody(monadResp),
+			),
 		)
 		return
 	}
@@ -179,7 +190,7 @@ func (r *BaseOutputResource[T]) Update(
 		},
 	}
 
-	output, _, err := r.client.OrganizationOutputsAPI.
+	output, monadResp, err := r.client.OrganizationOutputsAPI.
 		V2OrganizationIdOutputsOutputIdPut(
 			ctx,
 			r.client.OrganizationID,
@@ -190,7 +201,12 @@ func (r *BaseOutputResource[T]) Update(
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
-			fmt.Sprintf("Unable to update %s output, got error: %s", r.outputType, err),
+			fmt.Sprintf(
+				"Unable to update %s output, got error: %s. Response: %s",
+				r.outputType,
+				err,
+				getResponseBody(monadResp),
+			),
 		)
 		return
 	}
@@ -223,7 +239,7 @@ func (r *BaseOutputResource[T]) Delete(
 		return
 	}
 
-	_, _, err := r.client.OrganizationOutputsAPI.
+	_, monadResp, err := r.client.OrganizationOutputsAPI.
 		V1OrganizationIdOutputsOutputIdDelete(
 			ctx,
 			r.client.OrganizationID,
@@ -233,7 +249,12 @@ func (r *BaseOutputResource[T]) Delete(
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
-			fmt.Sprintf("Unable to delete %s output, got error: %s", r.outputType, err),
+			fmt.Sprintf(
+				"Unable to delete %s output, got error: %s. Response: %s",
+				r.outputType,
+				err,
+				getResponseBody(monadResp),
+			),
 		)
 		return
 	}
