@@ -18,7 +18,6 @@ import (
 //   - Add CRUD methods to client wrapper
 
 var _ resource.Resource = &ResourceOutputHTTP{}
-var _ resource.ResourceWithImportState = &ResourceOutputHTTP{}
 var _ ConnectorResourceModel = &ResourceOutputHTTPModel{}
 
 func init() {
@@ -66,7 +65,11 @@ type ResourceOutputHTTPSecrets struct {
 	AuthHeaders map[string]types.String `tfsdk:"auth_headers"`
 }
 
-func (r *ResourceOutputHTTP) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *ResourceOutputHTTP) Schema(
+	ctx context.Context,
+	req resource.SchemaRequest,
+	resp *resource.SchemaResponse,
+) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "HTTP output resource",
 

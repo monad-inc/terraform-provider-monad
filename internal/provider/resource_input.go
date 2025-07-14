@@ -12,36 +12,28 @@ import (
 	"github.com/monad-inc/terraform-provider-monad/internal/provider/client"
 )
 
-var _ resource.Resource = &BaseOutputResource[ConnectorResourceModel]{}
+var _ resource.Resource = &BaseInputResource[ConnectorResourceModel]{}
 
-type BaseOutputResource[T ConnectorResourceModel] struct {
-	client     *client.Client
-	outputType string
+type BaseInputResource[T ConnectorResourceModel] struct {
+	client    *client.Client
+	inputType string
 }
 
-func NewBaseOutputResource[T ConnectorResourceModel](outputType string) *BaseOutputResource[T] {
-	return &BaseOutputResource[T]{
-		outputType: outputType,
+func NewBaseInputResource[T ConnectorResourceModel](inputType string) *BaseInputResource[T] {
+	return &BaseInputResource[T]{
+		inputType: inputType,
 	}
 }
 
-func (r *BaseOutputResource[T]) Metadata(
+func (r *BaseInputResource[T]) Metadata(
 	ctx context.Context,
 	req resource.MetadataRequest,
 	resp *resource.MetadataResponse,
 ) {
-	resp.TypeName = req.ProviderTypeName + "_output_" + r.outputType
+	resp.TypeName = req.ProviderTypeName + "_input_" + r.inputType
 }
 
-func (r *BaseOutputResource[T]) Schema(
-	ctx context.Context,
-	req resource.SchemaRequest,
-	resp *resource.SchemaResponse,
-) {
-	resp.Diagnostics.AddError("Not implemented", "Schema is not implemented")
-}
-
-func (r *BaseOutputResource[T]) Configure(
+func (r *BaseInputResource[T]) Configure(
 	ctx context.Context,
 	req resource.ConfigureRequest,
 	resp *resource.ConfigureResponse,
@@ -65,7 +57,15 @@ func (r *BaseOutputResource[T]) Configure(
 	r.client = clientData
 }
 
-func (r *BaseOutputResource[T]) Create(
+func (r *BaseInputResource[T]) Schema(
+	ctx context.Context,
+	req resource.SchemaRequest,
+	resp *resource.SchemaResponse,
+) {
+	resp.Diagnostics.AddError("Not implemented", "Schema is not implemented")
+}
+
+func (r *BaseInputResource[T]) Create(
 	ctx context.Context,
 	req resource.CreateRequest,
 	resp *resource.CreateResponse,
@@ -78,40 +78,40 @@ func (r *BaseOutputResource[T]) Create(
 
 	config := data.GetSettingsAndSecrets()
 
-	request := monad.RoutesV2CreateOutputRequest{
+	request := monad.RoutesV2CreateInputRequest{
 		Name:        data.GetBaseModel().Name.ValueStringPointer(),
 		Description: data.GetBaseModel().Description.ValueStringPointer(),
-		OutputType:  ptr(r.outputType),
-		Config: &monad.SecretProcessesorOutputConfig{
-			Settings: &monad.SecretProcessesorOutputConfigSettings{
+		Type:        ptr(r.inputType),
+		Config: &monad.SecretProcessesorInputConfig{
+			Settings: &monad.SecretProcessesorInputConfigSettings{
 				MapmapOfStringAny: &config.Settings,
 			},
-			Secrets: &monad.SecretProcessesorOutputConfigSecrets{
+			Secrets: &monad.SecretProcessesorInputConfigSecrets{
 				MapmapOfStringAny: &config.Secrets,
 			},
 		},
 	}
 
-	output, _, err := r.client.OrganizationOutputsAPI.
-		V2OrganizationIdOutputsPost(ctx, r.client.OrganizationID).
-		RoutesV2CreateOutputRequest(request).
+	input, _, err := r.client.OrganizationInputsAPI.
+		V2OrganizationIdInputsPost(ctx, r.client.OrganizationID).
+		RoutesV2CreateInputRequest(request).
 		Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
-			fmt.Sprintf("Unable to create %s output, got error: %s", r.outputType, err),
+			fmt.Sprintf("Unable to create %s input, got error: %s", r.inputType, err),
 		)
 		return
 	}
 
-	data.GetBaseModel().ID = types.StringValue(*output.Id)
+	data.GetBaseModel().ID = types.StringValue(*input.Id)
 
-	tflog.Trace(ctx, fmt.Sprintf("created a %s output resource", r.outputType))
+	tflog.Trace(ctx, fmt.Sprintf("created a %s input resource", r.inputType))
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func (r *BaseOutputResource[T]) Read(
+func (r *BaseInputResource[T]) Read(
 	ctx context.Context,
 	req resource.ReadRequest,
 	resp *resource.ReadResponse,
@@ -122,8 +122,8 @@ func (r *BaseOutputResource[T]) Read(
 		return
 	}
 
-	output, _, err := r.client.OrganizationOutputsAPI.
-		V1OrganizationIdOutputsOutputIdGet(
+	output, _, err := r.client.OrganizationInputsAPI.
+		V1OrganizationIdInputsInputIdGet(
 			ctx,
 			r.client.OrganizationID,
 			data.GetBaseModel().ID.ValueString(),
@@ -132,7 +132,7 @@ func (r *BaseOutputResource[T]) Read(
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
-			fmt.Sprintf("Unable to read %s output, got error: %s", r.outputType, err),
+			fmt.Sprintf("Unable to read %s input, got error: %s", r.inputType, err),
 		)
 		return
 	}
@@ -144,7 +144,7 @@ func (r *BaseOutputResource[T]) Read(
 	if err := data.UpdateFromAPIResponse(output); err != nil {
 		resp.Diagnostics.AddError(
 			"Parse Error",
-			fmt.Sprintf("Unable to parse %s output response: %s", r.outputType, err),
+			fmt.Sprintf("Unable to parse %s input response: %s", r.inputType, err),
 		)
 		return
 	}
@@ -152,7 +152,7 @@ func (r *BaseOutputResource[T]) Read(
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func (r *BaseOutputResource[T]) Update(
+func (r *BaseInputResource[T]) Update(
 	ctx context.Context,
 	req resource.UpdateRequest,
 	resp *resource.UpdateResponse,
@@ -165,54 +165,54 @@ func (r *BaseOutputResource[T]) Update(
 
 	config := data.GetSettingsAndSecrets()
 
-	request := monad.RoutesV2PutOutputRequest{
+	request := monad.RoutesV2PutInputRequest{
 		Name:        data.GetBaseModel().Name.ValueStringPointer(),
 		Description: data.GetBaseModel().Description.ValueStringPointer(),
-		OutputType:  ptr(r.outputType),
-		Config: &monad.SecretProcessesorOutputConfig{
-			Settings: &monad.SecretProcessesorOutputConfigSettings{
+		Type:        ptr(r.inputType),
+		Config: &monad.SecretProcessesorInputConfig{
+			Settings: &monad.SecretProcessesorInputConfigSettings{
 				MapmapOfStringAny: &config.Settings,
 			},
-			Secrets: &monad.SecretProcessesorOutputConfigSecrets{
+			Secrets: &monad.SecretProcessesorInputConfigSecrets{
 				MapmapOfStringAny: &config.Secrets,
 			},
 		},
 	}
 
-	output, _, err := r.client.OrganizationOutputsAPI.
-		V2OrganizationIdOutputsOutputIdPut(
+	input, _, err := r.client.OrganizationInputsAPI.
+		V2OrganizationIdInputsInputIdPut(
 			ctx,
 			r.client.OrganizationID,
 			data.GetBaseModel().ID.ValueString(),
 		).
-		RoutesV2PutOutputRequest(request).
+		RoutesV2PutInputRequest(request).
 		Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
-			fmt.Sprintf("Unable to update %s output, got error: %s", r.outputType, err),
+			fmt.Sprintf("Unable to update %s input, got error: %s", r.inputType, err),
 		)
 		return
 	}
 
-	data.GetBaseModel().ID = types.StringValue(*output.Id)
-	data.GetBaseModel().Name = types.StringValue(*output.Name)
-	data.GetBaseModel().Description = types.StringValue(*output.Description)
+	data.GetBaseModel().ID = types.StringValue(*input.Id)
+	data.GetBaseModel().Name = types.StringValue(*input.Name)
+	data.GetBaseModel().Description = types.StringValue(*input.Description)
 
-	if err := data.UpdateFromAPIResponse(output); err != nil {
+	if err := data.UpdateFromAPIResponse(input); err != nil {
 		resp.Diagnostics.AddError(
 			"Parse Error",
-			fmt.Sprintf("Unable to parse %s output response: %s", r.outputType, err),
+			fmt.Sprintf("Unable to parse %s input response: %s", r.inputType, err),
 		)
 		return
 	}
 
-	tflog.Trace(ctx, fmt.Sprintf("updated a %s output resource", r.outputType))
+	tflog.Trace(ctx, fmt.Sprintf("updated a %s input resource", r.inputType))
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func (r *BaseOutputResource[T]) Delete(
+func (r *BaseInputResource[T]) Delete(
 	ctx context.Context,
 	req resource.DeleteRequest,
 	resp *resource.DeleteResponse,
@@ -223,8 +223,8 @@ func (r *BaseOutputResource[T]) Delete(
 		return
 	}
 
-	_, _, err := r.client.OrganizationOutputsAPI.
-		V1OrganizationIdOutputsOutputIdDelete(
+	_, _, err := r.client.OrganizationInputsAPI.
+		V1OrganizationIdInputsInputIdDelete(
 			ctx,
 			r.client.OrganizationID,
 			data.GetBaseModel().ID.ValueString(),
@@ -233,7 +233,7 @@ func (r *BaseOutputResource[T]) Delete(
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Client Error",
-			fmt.Sprintf("Unable to delete %s output, got error: %s", r.outputType, err),
+			fmt.Sprintf("Unable to delete %s input, got error: %s", r.inputType, err),
 		)
 		return
 	}

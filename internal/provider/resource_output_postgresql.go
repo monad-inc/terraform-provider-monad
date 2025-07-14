@@ -11,7 +11,6 @@ import (
 )
 
 var _ resource.Resource = &ResourceOutputPostgreSQL{}
-var _ resource.ResourceWithImportState = &ResourceOutputPostgreSQL{}
 var _ ConnectorResourceModel = &ResourceOutputPostgreSQLModel{}
 
 func init() {
@@ -52,7 +51,11 @@ type ResourceOutputPostgreSQLConfigSecrets struct {
 	Password         types.String `tfsdk:"password"`
 }
 
-func (r *ResourceOutputPostgreSQL) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
+func (r *ResourceOutputPostgreSQL) Schema(
+	ctx context.Context,
+	req resource.SchemaRequest,
+	resp *resource.SchemaResponse,
+) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "PostgreSQL output resource",
 
