@@ -176,7 +176,7 @@ func (r *ResourcePipeline) Schema(
 											"config": schema.MapAttribute{
 												MarkdownDescription: "Configuration for the condition",
 												Optional:            true,
-												ElementType:         types.StringType,
+												ElementType:         types.DynamicType,
 											},
 										},
 									},

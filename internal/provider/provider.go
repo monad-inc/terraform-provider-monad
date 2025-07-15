@@ -109,13 +109,13 @@ func (p *MonadProvider) Configure(ctx context.Context, req provider.ConfigureReq
 }
 
 func (p *MonadProvider) Resources(ctx context.Context) []func() resource.Resource {
-	resources := RegisteredConnectorResources
-	resources = append(resources,
+	return []func() resource.Resource{
+		NewResourceInput,
+		NewResourceOutput,
+		NewResourceTransform,
 		NewResourceSecret,
 		NewResourcePipeline,
-	)
-	return resources
-
+	}
 }
 
 func (p *MonadProvider) DataSources(ctx context.Context) []func() datasource.DataSource {

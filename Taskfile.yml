@@ -21,7 +21,6 @@ tasks:
 
   example-apply-and-destroy:
     desc: "Run apply and destroy on example terraform file in examples directory"
-    dir: examples
     deps:
       - build
     cmds:

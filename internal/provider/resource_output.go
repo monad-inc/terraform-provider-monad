@@ -2,40 +2,32 @@ package provider
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
+
+	monad "github.com/monad-inc/sdk/go"
+	"github.com/monad-inc/terraform-provider-monad/internal/provider/client"
 )
 
 var _ resource.Resource = &ResourceOutput{}
-var _ ConnectorResourceModel = &ResourceOutputModel{}
-
-func init() {
-	RegisteredConnectorResources = append(RegisteredConnectorResources, NewResourceOutput)
-}
 
 func NewResourceOutput() resource.Resource {
-	return &ResourceOutput{
-		BaseOutputResource: NewBaseOutputResource[*ResourceOutputModel](""),
-	}
+	return &ResourceOutput{}
 }
 
 type ResourceOutput struct {
-	*BaseOutputResource[*ResourceOutputModel]
+	client *client.Client
 }
 
-type ResourceOutputModel struct {
-	BaseConnectorModel
-	ComponentType types.String          `tfsdk:"component_type"`
-	Config        *ResourceOutputConfig `tfsdk:"config"`
-}
-
-type ResourceOutputConfig struct {
-	Settings types.Dynamic `tfsdk:"settings"`
-	Secrets  types.Dynamic `tfsdk:"secrets"`
+func (r *ResourceOutput) Metadata(
+	ctx context.Context,
+	req resource.MetadataRequest,
+	resp *resource.MetadataResponse,
+) {
+	resp.TypeName = fmt.Sprintf("%s_output", req.ProviderTypeName)
 }
 
 func (r *ResourceOutput) Schema(
@@ -43,96 +35,215 @@ func (r *ResourceOutput) Schema(
 	req resource.SchemaRequest,
 	resp *resource.SchemaResponse,
 ) {
-	resp.Schema = schema.Schema{
-		MarkdownDescription: "Generic Input",
+	resp.Schema = getConnectorSchema()
+}
 
-		Attributes: map[string]schema.Attribute{
-			"id": schema.StringAttribute{
-				Computed:            true,
-				MarkdownDescription: "Input identifier",
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.UseStateForUnknown(),
-				},
+func (r *ResourceOutput) Configure(
+	ctx context.Context,
+	req resource.ConfigureRequest,
+	resp *resource.ConfigureResponse,
+) {
+	if req.ProviderData == nil {
+		return
+	}
+
+	clientData, ok := req.ProviderData.(*client.Client)
+	if !ok {
+		resp.Diagnostics.AddError(
+			"Unexpected Resource Configure Type",
+			fmt.Sprintf(
+				"Expected *ClientData, got: %T. Please report this issue to the provider developers.",
+				req.ProviderData,
+			),
+		)
+		return
+	}
+
+	r.client = clientData
+}
+
+func (r *ResourceOutput) Create(
+	ctx context.Context,
+	req resource.CreateRequest,
+	resp *resource.CreateResponse,
+) {
+	var data ResourceConnectorModel
+
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	settings, secrets, err := data.getSettingsAndSecrets()
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to get settings and secrets", err.Error())
+		return
+	}
+
+	request := monad.RoutesV2CreateOutputRequest{
+		Name:        data.Name.ValueStringPointer(),
+		Description: data.Description.ValueStringPointer(),
+		OutputType:  data.ComponentType.ValueStringPointer(),
+		Config: &monad.SecretProcessesorOutputConfig{
+			Settings: &monad.SecretProcessesorOutputConfigSettings{
+				MapmapOfStringAny: &settings,
 			},
-			"name": schema.StringAttribute{
-				MarkdownDescription: "Name of the input",
-				Required:            true,
-			},
-			"description": schema.StringAttribute{
-				MarkdownDescription: "Description of the input",
-				Optional:            true,
-			},
-			"component_type": schema.StringAttribute{
-				MarkdownDescription: "Type of the input component",
-				Required:            true,
+			Secrets: &monad.SecretProcessesorOutputConfigSecrets{
+				MapmapOfStringAny: &secrets,
 			},
 		},
+	}
 
-		Blocks: map[string]schema.Block{
-			"config": schema.SingleNestedBlock{
-				MarkdownDescription: "Generic Input configuration",
-				Attributes: map[string]schema.Attribute{
-					"settings": schema.DynamicAttribute{
-						MarkdownDescription: "Settings for the input",
-						Optional:            true,
-					},
-					"secrets": schema.DynamicAttribute{
-						MarkdownDescription: "Settings for the input",
-						Optional:            true,
-						Sensitive:           true,
-					},
-				},
+	output, monadResp, err := r.client.OrganizationOutputsAPI.
+		V2OrganizationIdOutputsPost(ctx, r.client.OrganizationID).
+		RoutesV2CreateOutputRequest(request).
+		Execute()
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Client Error",
+			fmt.Sprintf(
+				"Unable to create output, got error: %s. Response: %s",
+				err,
+				getResponseBody(monadResp),
+			),
+		)
+		return
+	}
+
+	data.ID = types.StringValue(*output.Id)
+
+	tflog.Trace(ctx, "created a output resource")
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func (r *ResourceOutput) Read(
+	ctx context.Context,
+	req resource.ReadRequest,
+	resp *resource.ReadResponse,
+) {
+	var data ResourceConnectorModel
+
+	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	output, monadResp, err := r.client.OrganizationOutputsAPI.
+		V1OrganizationIdOutputsOutputIdGet(
+			ctx,
+			r.client.OrganizationID,
+			data.ID.ValueString(),
+		).
+		Execute()
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Client Error",
+			fmt.Sprintf(
+				"Unable to read output, got error: %s. Response: %s",
+				err,
+				getResponseBody(monadResp),
+			),
+		)
+		return
+	}
+
+	data.ID = types.StringValue(*output.Id)
+	data.Name = types.StringValue(*output.Name)
+	data.Description = types.StringValue(*output.Description)
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func (r *ResourceOutput) Update(
+	ctx context.Context,
+	req resource.UpdateRequest,
+	resp *resource.UpdateResponse,
+) {
+	var data ResourceConnectorModel
+
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	settings, secrets, err := data.getSettingsAndSecrets()
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to get settings and secrets", err.Error())
+		return
+	}
+
+	request := monad.RoutesV2PutOutputRequest{
+		Name:        data.Name.ValueStringPointer(),
+		Description: data.Description.ValueStringPointer(),
+		OutputType:  data.ComponentType.ValueStringPointer(),
+		Config: &monad.SecretProcessesorOutputConfig{
+			Settings: &monad.SecretProcessesorOutputConfigSettings{
+				MapmapOfStringAny: &settings,
+			},
+			Secrets: &monad.SecretProcessesorOutputConfigSecrets{
+				MapmapOfStringAny: &secrets,
 			},
 		},
 	}
+
+	output, monadResp, err := r.client.OrganizationOutputsAPI.
+		V2OrganizationIdOutputsOutputIdPut(
+			ctx,
+			r.client.OrganizationID,
+			data.ID.ValueString(),
+		).
+		RoutesV2PutOutputRequest(request).
+		Execute()
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Client Error",
+			fmt.Sprintf(
+				"Unable to update output, got error: %s. Response: %s",
+				err,
+				getResponseBody(monadResp),
+			),
+		)
+		return
+	}
+
+	data.ID = types.StringValue(*output.Id)
+	data.Name = types.StringValue(*output.Name)
+	data.Description = types.StringValue(*output.Description)
+
+	tflog.Trace(ctx, "updated a output resource")
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func (m *ResourceOutputModel) GetComponentSubType() string {
-	if m.ComponentType.IsNull() || m.ComponentType.IsUnknown() {
-		return ""
-	}
-	return m.ComponentType.ValueString()
-}
+func (r *ResourceOutput) Delete(
+	ctx context.Context,
+	req resource.DeleteRequest,
+	resp *resource.DeleteResponse,
+) {
+	var data ResourceConnectorModel
 
-func (m *ResourceOutputModel) GetBaseModel() *BaseConnectorModel {
-	return &m.BaseConnectorModel
-}
-
-func (m *ResourceOutputModel) GetSettingsAndSecrets(ctx context.Context) (*BaseConnectorConfig, error) {
-	config := &BaseConnectorConfig{
-		Settings: make(map[string]any),
-		Secrets:  make(map[string]any),
+	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	if m.Config == nil {
-		return config, nil
+	_, monadResp, err := r.client.OrganizationOutputsAPI.
+		V1OrganizationIdOutputsOutputIdDelete(
+			ctx,
+			r.client.OrganizationID,
+			data.ID.ValueString(),
+		).
+		Execute()
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Client Error",
+			fmt.Sprintf(
+				"Unable to delete output, got error: %s. Response: %s",
+				err,
+				getResponseBody(monadResp),
+			),
+		)
+		return
 	}
-
-	if !m.Config.Settings.IsNull() {
-		settings, err := tfDynamicToMapAny(m.Config.Settings)
-		if err != nil {
-			return nil, err
-		}
-		if settings != nil {
-			config.Settings = settings
-		}
-	}
-	if !m.Config.Secrets.IsNull() {
-		secrets, err := tfDynamicToMapAny(m.Config.Secrets)
-		if err != nil {
-			return nil, err
-		}
-		if secrets != nil {
-			config.Secrets = secrets
-		}
-	}
-
-	return config, nil
-}
-
-func (m *ResourceOutputModel) UpdateFromAPIResponse(output any) error {
-	// Since we can't determine the exact type, we'll use type assertions
-	// The actual type will need to be determined from the monad SDK
-	// For now, this is a placeholder that needs to be implemented properly
-	return nil
 }
