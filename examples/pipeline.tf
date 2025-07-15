@@ -152,7 +152,7 @@ resource "monad_pipeline" "example-pipeline" {
   edges {
     from_node_instance_slug = "input"
     to_node_instance_slug   = "ingested-timestamp-transform"
-    conditions {
+    condition {
       operator = "always"
     }
   }
@@ -160,7 +160,7 @@ resource "monad_pipeline" "example-pipeline" {
   edges {
     from_node_instance_slug = "input"
     to_node_instance_slug   = "crowdstrike-vuln-ocsf-transform"
-    conditions {
+    condition {
       operator = "always"
     }
   }
@@ -168,7 +168,7 @@ resource "monad_pipeline" "example-pipeline" {
   edges {
     from_node_instance_slug = "ingested-timestamp-transform"
     to_node_instance_slug   = "production-tag-transform"
-    conditions {
+    condition {
       operator = "always"
     }
   }
@@ -176,7 +176,7 @@ resource "monad_pipeline" "example-pipeline" {
   edges {
     from_node_instance_slug = "production-tag-transform"
     to_node_instance_slug   = "archive-output"
-    conditions {
+    condition {
       operator = "always"
     }
   }
@@ -184,16 +184,25 @@ resource "monad_pipeline" "example-pipeline" {
   edges {
     from_node_instance_slug = "crowdstrike-vuln-ocsf-transform"
     to_node_instance_slug   = "sec-lake-output"
-    conditions {
+    condition {
       operator = "always"
     }
   }
 
   edges {
+    name                    =  "only send high severity vulns"
     from_node_instance_slug = "crowdstrike-vuln-ocsf-transform"
     to_node_instance_slug   = "splunk-output"
-    conditions {
-      operator = "always"
+
+    condition {
+      operator = "and"
+      conditions {
+        type_id = "key_values"
+        config {
+          key   = "severity"
+          value = ["HIGH"]
+        }
+      }
     }
   }
 }

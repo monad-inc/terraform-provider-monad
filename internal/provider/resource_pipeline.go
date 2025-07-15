@@ -2,7 +2,6 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -41,7 +40,7 @@ type ResourcePipelineEdge struct {
 	Description          types.String              `tfsdk:"description"`
 	FromNodeInstanceSlug types.String              `tfsdk:"from_node_instance_slug"`
 	ToNodeInstanceSlug   types.String              `tfsdk:"to_node_instance_slug"`
-	Conditions           ResourcePipelineCondition `tfsdk:"conditions"`
+	Condition            ResourcePipelineCondition `tfsdk:"condition"`
 }
 
 type ResourcePipelineCondition struct {
@@ -50,8 +49,14 @@ type ResourcePipelineCondition struct {
 }
 
 type ResourcePipelineConditionCondition struct {
-	TypeID types.String `tfsdk:"type_id"`
-	Config types.Map    `tfsdk:"config"`
+	TypeID types.String                             `tfsdk:"type_id"`
+	Config ResourcePipelineConditionConditionConfig `tfsdk:"config"`
+}
+
+type ResourcePipelineConditionConditionConfig struct {
+	Key   types.String `tfsdk:"key"`
+	Value types.List   `tfsdk:"value"`
+	Rate  types.String `tfsdk:"rate"`
 }
 
 func NewResourcePipeline() resource.Resource {
@@ -156,7 +161,7 @@ func (r *ResourcePipeline) Schema(
 						},
 					},
 					Blocks: map[string]schema.Block{
-						"conditions": schema.SingleNestedBlock{
+						"condition": schema.SingleNestedBlock{
 							MarkdownDescription: "Conditions for the edge",
 							Attributes: map[string]schema.Attribute{
 								"operator": schema.StringAttribute{
@@ -173,10 +178,25 @@ func (r *ResourcePipeline) Schema(
 												MarkdownDescription: "Type ID for the condition",
 												Optional:            true,
 											},
-											"config": schema.MapAttribute{
+										},
+										Blocks: map[string]schema.Block{
+											"config": schema.SingleNestedBlock{
 												MarkdownDescription: "Configuration for the condition",
-												Optional:            true,
-												ElementType:         types.DynamicType,
+												Attributes: map[string]schema.Attribute{
+													"key": schema.StringAttribute{
+														MarkdownDescription: "The key to check for in the record",
+														Optional:            true,
+													},
+													"value": schema.ListAttribute{
+														MarkdownDescription: "The string values to check for in the record",
+														Optional:            true,
+														ElementType:         types.StringType,
+													},
+													"rate": schema.StringAttribute{
+														MarkdownDescription: "The rate at which records should be passed through the condition. Example: '100ms', '1s', '1m'",
+														Optional:            true,
+													},
+												},
 											},
 										},
 									},
@@ -226,23 +246,33 @@ func (r *ResourcePipeline) Create(
 			FromNodeInstanceId: edge.FromNodeInstanceSlug.ValueString(),
 			ToNodeInstanceId:   edge.ToNodeInstanceSlug.ValueString(),
 			Conditions: &monad.ModelsPipelineEdgeConditions{
-				Operator: edge.Conditions.Operator.ValueStringPointer(),
+				Operator: edge.Condition.Operator.ValueStringPointer(),
 			},
 		}
 
-		if len(edge.Conditions.Conditions) > 0 {
-			request.Edges[i].Conditions.Conditions = make([]monad.ModelsPipelineEdgeCondition, len(edge.Conditions.Conditions))
-			for j, condition := range edge.Conditions.Conditions {
-				fmt.Println("Condition Type ID:", condition.Config.String())
+		if len(edge.Condition.Conditions) > 0 {
+			request.Edges[i].Conditions.Conditions = make([]monad.ModelsPipelineEdgeCondition, len(edge.Condition.Conditions))
+			for j, condition := range edge.Condition.Conditions {
+				values := make([]string, 0)
+				if !condition.Config.Value.IsNull() {
+					diag := condition.Config.Value.ElementsAs(ctx, &values, false)
+					if diag.HasError() {
+						resp.Diagnostics.Append(diag...)
+						return
+					}
+				}
+
 				request.Edges[i].Conditions.Conditions[j] = monad.ModelsPipelineEdgeCondition{
 					TypeId: condition.TypeID.ValueStringPointer(),
+					Config: map[string]any{
+						"key":   condition.Config.Key.ValueString(),
+						"value": values,
+						"rate":  condition.Config.Rate.ValueString(),
+					},
 				}
 			}
 		}
 	}
-
-	b, _ := json.MarshalIndent(request, "", "  ")
-	fmt.Println(string(b))
 
 	pipeline, monadResp, err := r.client.PipelinesAPI.V2OrganizationIdPipelinesPost(
 		ctx,
@@ -321,8 +351,54 @@ func (r *ResourcePipeline) Update(
 	request := monad.RoutesV2UpdatePipelineRequest{
 		Name:        data.Name.ValueString(),
 		Description: data.Description.ValueStringPointer(),
+		Enabled:     true,
+		Nodes:       make([]monad.RoutesV2PipelineRequestNode, len(data.Nodes)),
+		Edges:       make([]monad.RoutesV2PipelineRequestEdge, len(data.Edges)),
 	}
 
+	for i, node := range data.Nodes {
+		request.Nodes[i] = monad.RoutesV2PipelineRequestNode{
+			ComponentType: node.ComponentType.ValueString(),
+			ComponentId:   node.ComponentID.ValueString(),
+			Slug:          node.Slug.ValueStringPointer(),
+			Enabled:       true,
+		}
+	}
+
+	for i, edge := range data.Edges {
+		request.Edges[i] = monad.RoutesV2PipelineRequestEdge{
+			Name:               edge.Name.ValueStringPointer(),
+			Description:        edge.Description.ValueStringPointer(),
+			FromNodeInstanceId: edge.FromNodeInstanceSlug.ValueString(),
+			ToNodeInstanceId:   edge.ToNodeInstanceSlug.ValueString(),
+			Conditions: &monad.ModelsPipelineEdgeConditions{
+				Operator: edge.Condition.Operator.ValueStringPointer(),
+			},
+		}
+
+		if len(edge.Condition.Conditions) > 0 {
+			request.Edges[i].Conditions.Conditions = make([]monad.ModelsPipelineEdgeCondition, len(edge.Condition.Conditions))
+			for j, condition := range edge.Condition.Conditions {
+				values := make([]string, 0)
+				if !condition.Config.Value.IsNull() {
+					diag := condition.Config.Value.ElementsAs(ctx, &values, false)
+					if diag.HasError() {
+						resp.Diagnostics.Append(diag...)
+						return
+					}
+				}
+
+				request.Edges[i].Conditions.Conditions[j] = monad.ModelsPipelineEdgeCondition{
+					TypeId: condition.TypeID.ValueStringPointer(),
+					Config: map[string]any{
+						"key":   condition.Config.Key.ValueString(),
+						"value": values,
+						"rate":  condition.Config.Rate.ValueString(),
+					},
+				}
+			}
+		}
+	}
 	pipeline, monadResp, err := r.client.PipelinesAPI.
 		V2OrganizationIdPipelinesPipelineIdPatch(
 			ctx,
