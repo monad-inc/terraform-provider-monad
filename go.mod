@@ -5,7 +5,6 @@ go 1.23.0
 toolchain go1.24.3
 
 require (
-	github.com/davecgh/go-spew v1.1.1
 	github.com/hashicorp/terraform-plugin-framework v1.15.0
 	github.com/hashicorp/terraform-plugin-log v0.9.0
 	github.com/monad-inc/sdk/go v0.0.0-20250711173942-fad95a92a3ca
