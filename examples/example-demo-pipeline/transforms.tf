@@ -24,7 +24,7 @@ resource "monad_transform" "crowdstrike-vuln-ocsf-transform" {
       {
         operation = "jq"
         arguments = {
-          query = file("${path.module}/crowdstrike-vuln-ocsf.jq")
+          query = file("${path.module}/jq/crowdstrike-vuln-ocsf.jq")
         }
       }
     ]

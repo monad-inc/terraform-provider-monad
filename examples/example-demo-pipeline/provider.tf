@@ -21,4 +21,5 @@ provider "monad" {
   base_url        = "https://localhost"
   api_token       = var.api_token
   organization_id = var.organization_id
+  use_insecure    = true
 }

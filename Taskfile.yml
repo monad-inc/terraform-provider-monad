@@ -7,14 +7,14 @@ tasks:
 
   example-apply:
     desc: "Run example terraform file in examples directory"
-    dir: examples
+    dir: examples/example-demo-pipeline
     deps:
       - build
     cmd: terraform apply -auto-approve
 
   example-destroy:
     desc: "Run destroy on example terraform file in examples directory"
-    dir: examples
+    dir: examples/example-demo-pipeline
     deps:
       - build
     cmd: terraform destroy -auto-approve

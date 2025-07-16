@@ -100,6 +100,7 @@ provider "monad" {
   base_url        = "https://beta.monad.com"  # Optional, defaults to this value
   api_token       = var.monad_api_token       # Can use MONAD_API_TOKEN env var
   organization_id = var.organization_id       # Can use MONAD_ORGANIZATION_ID env var
+  use_insecure    = false                     # Can use MONAD_USE_INSECURE env var
 }
 ```
 
@@ -108,6 +109,7 @@ provider "monad" {
 - `MONAD_BASE_URL` - Base URL for the Monad API
 - `MONAD_API_TOKEN` - API token for authentication
 - `MONAD_ORGANIZATION_ID` - Organization ID for all resources
+- `MONAD_USE_INSECURE` - Skip TLS verification for Monad API. (Not recommended for production use)
 
 ## Resources
 
@@ -154,24 +156,3 @@ Generic transform connector for data transformations.
 - `description` (string, optional) - Description of the transform
 - `type` (string, required) - Type of transform connector
 - `config` (block, optional) - Transform configuration
-
-## Import
-
-All resources support import using their respective resource IDs:
-
-```bash
-# Import secrets
-terraform import monad_secret.example secret-id-here
-
-# Import pipelines
-terraform import monad_pipeline.example pipeline-id-here
-
-# Import inputs
-terraform import monad_input.example input-id-here
-
-# Import outputs
-terraform import monad_output.example output-id-here
-
-# Import transforms
-terraform import monad_transform.example transform-id-here
-```
