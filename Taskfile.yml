@@ -19,10 +19,7 @@ tasks:
       - build
     cmd: terraform destroy -auto-approve
 
-  example-apply-and-destroy:
-    desc: "Run apply and destroy on example terraform file in examples directory"
-    deps:
-      - build
-    cmds:
-      - task: example-apply
-      - task: example-destroy
+  generate:
+    desc: "Generate documentation and run formatting for the provider"
+    dir: tools
+    cmd: go generate

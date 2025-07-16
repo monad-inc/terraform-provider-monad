@@ -85,7 +85,7 @@ resource "monad_pipeline" "example-pipeline" {
   }
 
   edges {
-    name                    =  "only send high severity vulns"
+    name                    = "only send high severity vulns"
     from_node_instance_slug = "crowdstrike-vuln-ocsf-transform"
     to_node_instance_slug   = "splunk-output"
 

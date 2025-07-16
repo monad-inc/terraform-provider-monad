@@ -40,8 +40,8 @@ resource "monad_transform" "production-tag-transform" {
       {
         operation = "add"
         arguments = {
-          key    = "environment_tag"
-          value  = "production"
+          key   = "environment_tag"
+          value = "production"
         }
       }
     ]
