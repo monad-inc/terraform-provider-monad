@@ -7,23 +7,19 @@ tasks:
 
   example-apply:
     desc: "Run example terraform file in examples directory"
-    dir: examples
+    dir: examples/example-demo-pipeline
     deps:
       - build
     cmd: terraform apply -auto-approve
 
   example-destroy:
     desc: "Run destroy on example terraform file in examples directory"
-    dir: examples
+    dir: examples/example-demo-pipeline
     deps:
       - build
     cmd: terraform destroy -auto-approve
 
-  example-apply-and-destroy:
-    desc: "Run apply and destroy on example terraform file in examples directory"
-    dir: examples
-    deps:
-      - build
-    cmds:
-      - task: example-apply
-      - task: example-destroy
+  generate:
+    desc: "Generate documentation and run formatting for the provider"
+    dir: tools
+    cmd: go generate

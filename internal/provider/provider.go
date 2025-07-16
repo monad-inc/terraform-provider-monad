@@ -28,6 +28,7 @@ type MonadProviderModel struct {
 	BaseURL        types.String `tfsdk:"base_url"`
 	APIToken       types.String `tfsdk:"api_token"`
 	OrganizationID types.String `tfsdk:"organization_id"`
+	UseInsecure    types.Bool   `tfsdk:"use_insecure"`
 }
 
 func (p *MonadProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
@@ -49,6 +50,10 @@ func (p *MonadProvider) Schema(ctx context.Context, req provider.SchemaRequest, 
 			},
 			"organization_id": schema.StringAttribute{
 				MarkdownDescription: "Organization ID for all resources. Can also be set with the MONAD_ORGANIZATION_ID environment variable.",
+				Optional:            true,
+			},
+			"use_insecure": schema.BoolAttribute{
+				MarkdownDescription: "Set to true to skip TLS verification. Not recommended for production use. Can also be set with the MONAD_USE_INSECURE environment variable.",
 				Optional:            true,
 			},
 		},
@@ -97,11 +102,18 @@ func (p *MonadProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		)
 	}
 
+	isInsecure := false
+	if !data.UseInsecure.IsNull() {
+		isInsecure = data.UseInsecure.ValueBool()
+	} else if os.Getenv("MONAD_USE_INSECURE") == "true" {
+		isInsecure = true
+	}
+
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	client := client.NewMonadAPIClient(baseURL, apiToken, organizationID, true)
+	client := client.NewMonadAPIClient(baseURL, apiToken, organizationID, isInsecure)
 	p.organizationID = organizationID
 
 	resp.DataSourceData = client
@@ -109,13 +121,13 @@ func (p *MonadProvider) Configure(ctx context.Context, req provider.ConfigureReq
 }
 
 func (p *MonadProvider) Resources(ctx context.Context) []func() resource.Resource {
-	resources := RegisteredConnectorResources
-	resources = append(resources,
+	return []func() resource.Resource{
+		NewResourceInput,
+		NewResourceOutput,
+		NewResourceTransform,
 		NewResourceSecret,
 		NewResourcePipeline,
-	)
-	return resources
-
+	}
 }
 
 func (p *MonadProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
