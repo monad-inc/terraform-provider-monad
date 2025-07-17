@@ -20,13 +20,6 @@ type ResourceConnectorConfig struct {
 	Secrets  types.Dynamic `tfsdk:"secrets"`
 }
 
-type ConnectorSecret struct {
-	ID          types.String `tfsdk:"id"`
-	Name        types.String `tfsdk:"name"`
-	Description types.String `tfsdk:"description"`
-	Value       types.String `tfsdk:"value"`
-}
-
 func (m *ResourceConnectorModel) getSettingsAndSecrets() (map[string]any, map[string]any, error) {
 	settings := make(map[string]any)
 	secrets := make(map[string]any)
@@ -95,4 +88,20 @@ func getConnectorSchema() schema.Schema {
 			},
 		},
 	}
+}
+
+func connectorConfigToTF(inSettings, inSecrets map[string]any) (*ResourceConnectorConfig, error) {
+	settings, err := AnyToDynamic(inSettings)
+	if err != nil {
+		return nil, err
+	}
+
+	secrets, err := AnyToDynamic(inSecrets)
+	if err != nil {
+		return nil, err
+	}
+	return &ResourceConnectorConfig{
+		Settings: settings,
+		Secrets:  secrets,
+	}, nil
 }

@@ -151,9 +151,20 @@ func (r *ResourceOutput) Read(
 		return
 	}
 
+	config, err := connectorConfigToTF(output.Config.Settings, output.Config.Secrets)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Failed to convert output config",
+			fmt.Sprintf("Error converting config: %s", err),
+		)
+		return
+	}
+
 	data.ID = types.StringValue(*output.Id)
 	data.Name = types.StringValue(*output.Name)
 	data.Description = types.StringValue(*output.Description)
+	data.ComponentType = types.StringValue(*output.Type)
+	data.Config = config
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

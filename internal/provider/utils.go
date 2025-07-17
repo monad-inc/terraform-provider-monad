@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -22,6 +23,11 @@ func getResponseBody(resp *http.Response) []byte {
 
 	body, _ := io.ReadAll(resp.Body)
 	return body
+}
+
+// TfDynamicToMapAny converts a types.Dynamic to map[string]any
+func TfDynamicToMapAny(dyn types.Dynamic) (map[string]any, error) {
+	return tfDynamicToMapAny(dyn)
 }
 
 func tfDynamicToMapAny(dyn types.Dynamic) (map[string]any, error) {
@@ -151,4 +157,107 @@ func tfSetToSliceAny(ctx context.Context, set types.Set) ([]any, error) {
 	}
 	
 	return result, nil
+}
+
+// anyToAttrValue converts a Go value to an attr.Value and attr.Type
+func anyToAttrValue(v any) (attr.Value, attr.Type, error) {
+	if v == nil {
+		return types.StringNull(), types.StringType, nil
+	}
+
+	switch val := v.(type) {
+	case string:
+		return types.StringValue(val), types.StringType, nil
+	case bool:
+		return types.BoolValue(val), types.BoolType, nil
+	case int:
+		return types.Int64Value(int64(val)), types.Int64Type, nil
+	case int32:
+		return types.Int64Value(int64(val)), types.Int64Type, nil
+	case int64:
+		return types.Int64Value(val), types.Int64Type, nil
+	case float32:
+		return types.Float64Value(float64(val)), types.Float64Type, nil
+	case float64:
+		return types.Float64Value(val), types.Float64Type, nil
+	case []any:
+		// Convert slice to list
+		elements := make([]attr.Value, len(val))
+		var elementType attr.Type
+		
+		for i, elem := range val {
+			elemValue, elemType, err := anyToAttrValue(elem)
+			if err != nil {
+				return nil, nil, fmt.Errorf("error converting slice element at index %d: %w", i, err)
+			}
+			elements[i] = elemValue
+			if elementType == nil {
+				elementType = elemType
+			}
+		}
+		
+		if elementType == nil {
+			elementType = types.StringType // default type for empty slices
+		}
+		
+		listValue, diags := types.ListValue(elementType, elements)
+		if diags.HasError() {
+			return nil, nil, fmt.Errorf("error creating list value: %s", diags)
+		}
+		return listValue, types.ListType{ElemType: elementType}, nil
+		
+	case map[string]any:
+		// Convert map to object
+		attributes := make(map[string]attr.Value)
+		attributeTypes := make(map[string]attr.Type)
+		
+		for key, value := range val {
+			attrValue, attrType, err := anyToAttrValue(value)
+			if err != nil {
+				return nil, nil, fmt.Errorf("error converting map value for key %q: %w", key, err)
+			}
+			attributes[key] = attrValue
+			attributeTypes[key] = attrType
+		}
+		
+		objectValue, diags := types.ObjectValue(attributeTypes, attributes)
+		if diags.HasError() {
+			return nil, nil, fmt.Errorf("error creating object value: %s", diags)
+		}
+		return objectValue, types.ObjectType{AttrTypes: attributeTypes}, nil
+		
+	default:
+		// Handle interface{} values by using reflection
+		rv := reflect.ValueOf(v)
+		switch rv.Kind() {
+		case reflect.String:
+			return types.StringValue(rv.String()), types.StringType, nil
+		case reflect.Bool:
+			return types.BoolValue(rv.Bool()), types.BoolType, nil
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			return types.Int64Value(rv.Int()), types.Int64Type, nil
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			return types.Int64Value(int64(rv.Uint())), types.Int64Type, nil
+		case reflect.Float32, reflect.Float64:
+			return types.Float64Value(rv.Float()), types.Float64Type, nil
+		default:
+			return nil, nil, fmt.Errorf("unsupported Go type: %T (kind: %s)", v, rv.Kind())
+		}
+	}
+}
+
+// AnyToDynamic converts a map[string]any to types.Dynamic
+func AnyToDynamic(in map[string]any) (types.Dynamic, error) {
+	if in == nil || len(in) == 0 {
+		return types.DynamicNull(), nil
+	}
+	
+	// Convert the map to an ObjectValue
+	attrValue, _, err := anyToAttrValue(in)
+	if err != nil {
+		return types.DynamicNull(), fmt.Errorf("error converting map to attr.Value: %w", err)
+	}
+	
+	// Wrap the ObjectValue in a DynamicValue
+	return types.DynamicValue(attrValue), nil
 }
