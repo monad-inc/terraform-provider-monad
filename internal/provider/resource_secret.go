@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -16,6 +17,8 @@ import (
 )
 
 var _ resource.Resource = &ResourceSecret{}
+var _ resource.ResourceWithConfigure = &ResourceSecret{}
+var _ resource.ResourceWithImportState = &ResourceSecret{}
 
 type ResourceSecret struct {
 	client *client.Client
@@ -253,4 +256,12 @@ func (r *ResourceSecret) Delete(
 		)
 		return
 	}
+}
+
+func (r *ResourceSecret) ImportState(
+	ctx context.Context,
+	req resource.ImportStateRequest,
+	resp *resource.ImportStateResponse,
+) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }

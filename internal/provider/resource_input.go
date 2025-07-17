@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -13,6 +14,8 @@ import (
 )
 
 var _ resource.Resource = &ResourceInput{}
+var _ resource.ResourceWithConfigure = &ResourceInput{}
+var _ resource.ResourceWithImportState = &ResourceInput{}
 
 func NewResourceInput() resource.Resource {
 	return &ResourceInput{}
@@ -151,6 +154,7 @@ func (r *ResourceInput) Read(
 	data.ID = types.StringValue(*input.Id)
 	data.Name = types.StringValue(*input.Name)
 	data.Description = types.StringValue(*input.Description)
+	data.ComponentType = types.StringValue(*input.Type)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -246,4 +250,12 @@ func (r *ResourceInput) Delete(
 		)
 		return
 	}
+}
+
+func (r *ResourceInput) ImportState(
+	ctx context.Context,
+	req resource.ImportStateRequest,
+	resp *resource.ImportStateResponse,
+) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }

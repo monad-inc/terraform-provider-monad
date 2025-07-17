@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
@@ -17,6 +18,8 @@ import (
 )
 
 var _ resource.Resource = &ResourceTransform{}
+var _ resource.ResourceWithConfigure = &ResourceTransform{}
+var _ resource.ResourceWithImportState = &ResourceTransform{}
 
 type ResourceTransform struct {
 	client *client.Client
@@ -286,6 +289,14 @@ func (r *ResourceTransform) Delete(
 		)
 		return
 	}
+}
+
+func (r *ResourceTransform) ImportState(
+	ctx context.Context,
+	req resource.ImportStateRequest,
+	resp *resource.ImportStateResponse,
+) {
+	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
 func parseOperations(_ context.Context, operationsDynamic types.Dynamic) ([]monad.RoutesTransformOperation, error) {
