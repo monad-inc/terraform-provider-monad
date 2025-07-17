@@ -113,7 +113,25 @@ func (r *ResourceInput) Create(
 		return
 	}
 
+	config, err := connectorConfigToTF(input.Config.Settings, input.Config.Secrets)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Failed to convert input config",
+			fmt.Sprintf("Error converting config: %s", err),
+		)
+		return
+	}
+
+	description := types.StringNull()
+	if input.Description != nil && *input.Description != "" {
+		description = types.StringValue(*input.Description)
+	}
+
 	data.ID = types.StringValue(*input.Id)
+	data.Name = types.StringValue(*input.Name)
+	data.Description = description
+	data.ComponentType = types.StringValue(*input.Type)
+	data.Config = config
 
 	tflog.Trace(ctx, "created an input resource")
 
@@ -160,9 +178,14 @@ func (r *ResourceInput) Read(
 		return
 	}
 
+	description := types.StringNull()
+	if input.Description != nil && *input.Description != "" {
+		description = types.StringValue(*input.Description)
+	}
+
 	data.ID = types.StringValue(*input.Id)
 	data.Name = types.StringValue(*input.Name)
-	data.Description = types.StringValue(*input.Description)
+	data.Description = description
 	data.ComponentType = types.StringValue(*input.Type)
 	data.Config = config
 
@@ -221,9 +244,20 @@ func (r *ResourceInput) Update(
 		return
 	}
 
+	config, err := connectorConfigToTF(input.Config.Settings, input.Config.Secrets)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Failed to convert input config",
+			fmt.Sprintf("Error converting config: %s", err),
+		)
+		return
+	}
+
 	data.ID = types.StringValue(*input.Id)
 	data.Name = types.StringValue(*input.Name)
 	data.Description = types.StringValue(*input.Description)
+	data.ComponentType = types.StringValue(*input.Type)
+	data.Config = config
 
 	tflog.Trace(ctx, "updated an input resource")
 

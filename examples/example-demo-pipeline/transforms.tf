@@ -2,7 +2,7 @@ resource "monad_transform" "ingested-timestamp-transform" {
   name        = "Add ingested timestamp"
   description = "adds a timestamp to show when the record was processed"
 
-  config {
+  config = {
     operations = [
       {
         operation = "timestamp"
@@ -19,7 +19,7 @@ resource "monad_transform" "crowdstrike-vuln-ocsf-transform" {
   name        = "OCSF CrowdStrike Vulnerability Findings"
   description = "Transforms CrowdStrike Vulnerability Findings data into OCSF Schema"
 
-  config {
+  config = {
     operations = [
       {
         operation = "jq"
@@ -35,7 +35,7 @@ resource "monad_transform" "production-tag-transform" {
   name        = "Add production tag"
   description = "Adds the production tag to the record"
 
-  config {
+  config = {
     operations = [
       {
         operation = "add"

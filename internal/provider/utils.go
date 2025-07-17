@@ -108,6 +108,8 @@ func tfValueToAny(ctx context.Context, value attr.Value) (any, error) {
 		return tfListToSliceAny(ctx, v)
 	case types.Set:
 		return tfSetToSliceAny(ctx, v)
+	case types.Tuple:
+		return tfTupleToSliceAny(ctx, v)
 	case types.Map:
 		return tfMapToMapAny(ctx, v)
 	case types.Object:
@@ -159,6 +161,25 @@ func tfSetToSliceAny(ctx context.Context, set types.Set) ([]any, error) {
 	return result, nil
 }
 
+func tfTupleToSliceAny(ctx context.Context, tuple types.Tuple) ([]any, error) {
+	if tuple.IsNull() || tuple.IsUnknown() {
+		return nil, nil
+	}
+
+	elements := tuple.Elements()
+	result := make([]any, len(elements))
+	
+	for i, element := range elements {
+		converted, err := tfValueToAny(ctx, element)
+		if err != nil {
+			return nil, fmt.Errorf("error converting tuple element at index %d: %w", i, err)
+		}
+		result[i] = converted
+	}
+	
+	return result, nil
+}
+
 // anyToAttrValue converts a Go value to an attr.Value and attr.Type
 func anyToAttrValue(v any) (attr.Value, attr.Type, error) {
 	if v == nil {
@@ -181,9 +202,9 @@ func anyToAttrValue(v any) (attr.Value, attr.Type, error) {
 	case float64:
 		return types.Float64Value(val), types.Float64Type, nil
 	case []any:
-		// Convert slice to list
+		// Convert slice to tuple (which can handle heterogeneous types)
 		elements := make([]attr.Value, len(val))
-		var elementType attr.Type
+		elementTypes := make([]attr.Type, len(val))
 		
 		for i, elem := range val {
 			elemValue, elemType, err := anyToAttrValue(elem)
@@ -191,20 +212,23 @@ func anyToAttrValue(v any) (attr.Value, attr.Type, error) {
 				return nil, nil, fmt.Errorf("error converting slice element at index %d: %w", i, err)
 			}
 			elements[i] = elemValue
-			if elementType == nil {
-				elementType = elemType
+			elementTypes[i] = elemType
+		}
+		
+		if len(elements) == 0 {
+			// For empty slices, return an empty tuple
+			tupleValue, diags := types.TupleValue([]attr.Type{}, []attr.Value{})
+			if diags.HasError() {
+				return nil, nil, fmt.Errorf("error creating empty tuple value: %s", diags)
 			}
+			return tupleValue, types.TupleType{ElemTypes: []attr.Type{}}, nil
 		}
 		
-		if elementType == nil {
-			elementType = types.StringType // default type for empty slices
-		}
-		
-		listValue, diags := types.ListValue(elementType, elements)
+		tupleValue, diags := types.TupleValue(elementTypes, elements)
 		if diags.HasError() {
-			return nil, nil, fmt.Errorf("error creating list value: %s", diags)
+			return nil, nil, fmt.Errorf("error creating tuple value: %s", diags)
 		}
-		return listValue, types.ListType{ElemType: elementType}, nil
+		return tupleValue, types.TupleType{ElemTypes: elementTypes}, nil
 		
 	case map[string]any:
 		// Convert map to object

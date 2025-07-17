@@ -3,7 +3,9 @@ package provider
 import (
 	"context"
 	"fmt"
+	"sort"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -295,10 +297,141 @@ func (r *ResourcePipeline) Create(
 	}
 
 	data.ID = types.StringValue(*pipeline.Id)
+	data.Name = types.StringValue(*pipeline.Name)
+	data.Description = types.StringValue(*pipeline.Description)
+
+	nodes := make([]ResourcePipelineNode, len(pipeline.Nodes))
+	for i, node := range pipeline.Nodes {
+		nodes[i] = ResourcePipelineNode{
+			ComponentType: types.StringValue(*node.ComponentType),
+			ComponentID:   types.StringValue(*node.ComponentId),
+			Slug:          types.StringValue(*node.Slug),
+		}
+	}
+	sortNodesByConfigOrder(nodes, data.Nodes)
+	data.Nodes = nodes
+
+	edges := make([]ResourcePipelineEdge, len(pipeline.Edges))
+	for i, edge := range pipeline.Edges {
+		name := types.StringNull()
+		if edge.Name != nil {
+			name = types.StringValue(*edge.Name)
+		}
+
+		description := types.StringNull()
+		if edge.Description != nil {
+			description = types.StringValue(*edge.Description)
+		}
+
+		edges[i] = ResourcePipelineEdge{
+			Name:                 name,
+			Description:          description,
+			FromNodeInstanceSlug: types.StringValue(getSlugForNodeID(pipeline.Nodes, *edge.FromNodeInstanceId)),
+			ToNodeInstanceSlug:   types.StringValue(getSlugForNodeID(pipeline.Nodes, *edge.ToNodeInstanceId)),
+			Condition: ResourcePipelineCondition{
+				Operator:   types.StringValue(*edge.Conditions.Operator),
+				Conditions: make([]ResourcePipelineConditionCondition, len(edge.Conditions.Conditions)),
+			},
+		}
+
+		for j, condition := range edge.Conditions.Conditions {
+			key := types.StringNull()
+			if k, ok := condition.Config["key"].(string); ok {
+				key = types.StringValue(k)
+			}
+
+			rate := types.StringNull()
+			if r, ok := condition.Config["rate"].(string); ok && r != "" {
+				rate = types.StringValue(r)
+			}
+
+			value := types.ListNull(types.StringType)
+			if v, ok := condition.Config["value"].([]interface{}); ok && len(v) > 0 {
+				values := make([]attr.Value, len(v))
+				for k, val := range v {
+					if strVal, ok := val.(string); ok {
+						values[k] = types.StringValue(strVal)
+					}
+				}
+				value = types.ListValueMust(types.StringType, values)
+			}
+
+			edges[i].Condition.Conditions[j] = ResourcePipelineConditionCondition{
+				TypeID: types.StringValue(*condition.TypeId),
+				Config: ResourcePipelineConditionConditionConfig{
+					Key:   key,
+					Value: value,
+					Rate:  rate,
+				},
+			}
+		}
+	}
+	sortEdgesByConfigOrder(edges, data.Edges)
+	data.Edges = edges
 
 	tflog.Trace(ctx, "created a pipeline resource")
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func getSlugForNodeID(nodes []monad.ModelsPipelineNode, nodeID string) string {
+	for _, node := range nodes {
+		if node.Id != nil && *node.Id == nodeID {
+			return *node.Slug
+		}
+	}
+	return ""
+}
+
+func sortNodesByConfigOrder(nodes []ResourcePipelineNode, configNodes []ResourcePipelineNode) {
+	configOrder := make(map[string]int)
+	for i, node := range configNodes {
+		configOrder[node.Slug.ValueString()] = i
+	}
+
+	sort.Slice(nodes, func(i, j int) bool {
+		slugI := nodes[i].Slug.ValueString()
+		slugJ := nodes[j].Slug.ValueString()
+		orderI, okI := configOrder[slugI]
+		orderJ, okJ := configOrder[slugJ]
+		
+		if okI && okJ {
+			return orderI < orderJ
+		}
+		if okI {
+			return true
+		}
+		if okJ {
+			return false
+		}
+		return slugI < slugJ
+	})
+}
+
+func sortEdgesByConfigOrder(edges []ResourcePipelineEdge, configEdges []ResourcePipelineEdge) {
+	configOrder := make(map[string]int)
+	for i, edge := range configEdges {
+		key := edge.FromNodeInstanceSlug.ValueString() + "->" + edge.ToNodeInstanceSlug.ValueString()
+		configOrder[key] = i
+	}
+
+	sort.Slice(edges, func(i, j int) bool {
+		keyI := edges[i].FromNodeInstanceSlug.ValueString() + "->" + edges[i].ToNodeInstanceSlug.ValueString()
+		keyJ := edges[j].FromNodeInstanceSlug.ValueString() + "->" + edges[j].ToNodeInstanceSlug.ValueString()
+		orderI, okI := configOrder[keyI]
+		orderJ, okJ := configOrder[keyJ]
+		
+		if okI && okJ {
+			return orderI < orderJ
+		}
+		if okI {
+			return true
+		}
+		if okJ {
+			return false
+		}
+		return keyI < keyJ
+	})
 }
 
 func (r *ResourcePipeline) Read(
@@ -335,6 +468,75 @@ func (r *ResourcePipeline) Read(
 	data.ID = types.StringValue(*pipeline.Id)
 	data.Name = types.StringValue(*pipeline.Name)
 	data.Description = types.StringValue(*pipeline.Description)
+
+	nodes := make([]ResourcePipelineNode, len(pipeline.Nodes))
+	for i, node := range pipeline.Nodes {
+		nodes[i] = ResourcePipelineNode{
+			ComponentType: types.StringValue(*node.ComponentType),
+			ComponentID:   types.StringValue(*node.ComponentId),
+			Slug:          types.StringValue(*node.Slug),
+		}
+	}
+	sortNodesByConfigOrder(nodes, data.Nodes)
+	data.Nodes = nodes
+
+	edges := make([]ResourcePipelineEdge, len(pipeline.Edges))
+	for i, edge := range pipeline.Edges {
+		name := types.StringNull()
+		if edge.Name != nil {
+			name = types.StringValue(*edge.Name)
+		}
+
+		description := types.StringNull()
+		if edge.Description != nil {
+			description = types.StringValue(*edge.Description)
+		}
+
+		edges[i] = ResourcePipelineEdge{
+			Name:                 name,
+			Description:          description,
+			FromNodeInstanceSlug: types.StringValue(getSlugForNodeID(pipeline.Nodes, *edge.FromNodeInstanceId)),
+			ToNodeInstanceSlug:   types.StringValue(getSlugForNodeID(pipeline.Nodes, *edge.ToNodeInstanceId)),
+			Condition: ResourcePipelineCondition{
+				Operator:   types.StringValue(*edge.Conditions.Operator),
+				Conditions: make([]ResourcePipelineConditionCondition, len(edge.Conditions.Conditions)),
+			},
+		}
+
+		for j, condition := range edge.Conditions.Conditions {
+			key := types.StringNull()
+			if k, ok := condition.Config["key"].(string); ok {
+				key = types.StringValue(k)
+			}
+
+			rate := types.StringNull()
+			if r, ok := condition.Config["rate"].(string); ok && r != "" {
+				rate = types.StringValue(r)
+			}
+
+			value := types.ListNull(types.StringType)
+			if v, ok := condition.Config["value"].([]interface{}); ok && len(v) > 0 {
+				values := make([]attr.Value, len(v))
+				for k, val := range v {
+					if strVal, ok := val.(string); ok {
+						values[k] = types.StringValue(strVal)
+					}
+				}
+				value = types.ListValueMust(types.StringType, values)
+			}
+
+			edges[i].Condition.Conditions[j] = ResourcePipelineConditionCondition{
+				TypeID: types.StringValue(*condition.TypeId),
+				Config: ResourcePipelineConditionConditionConfig{
+					Key:   key,
+					Value: value,
+					Rate:  rate,
+				},
+			}
+		}
+	}
+	sortEdgesByConfigOrder(edges, data.Edges)
+	data.Edges = edges
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -425,6 +627,75 @@ func (r *ResourcePipeline) Update(
 	data.ID = types.StringValue(*pipeline.Id)
 	data.Name = types.StringValue(*pipeline.Name)
 	data.Description = types.StringValue(*pipeline.Description)
+
+	nodes := make([]ResourcePipelineNode, len(pipeline.Nodes))
+	for i, node := range pipeline.Nodes {
+		nodes[i] = ResourcePipelineNode{
+			ComponentType: types.StringValue(*node.ComponentType),
+			ComponentID:   types.StringValue(*node.ComponentId),
+			Slug:          types.StringValue(*node.Slug),
+		}
+	}
+	sortNodesByConfigOrder(nodes, data.Nodes)
+	data.Nodes = nodes
+
+	edges := make([]ResourcePipelineEdge, len(pipeline.Edges))
+	for i, edge := range pipeline.Edges {
+		name := types.StringNull()
+		if edge.Name != nil {
+			name = types.StringValue(*edge.Name)
+		}
+
+		description := types.StringNull()
+		if edge.Description != nil {
+			description = types.StringValue(*edge.Description)
+		}
+
+		edges[i] = ResourcePipelineEdge{
+			Name:                 name,
+			Description:          description,
+			FromNodeInstanceSlug: types.StringValue(getSlugForNodeID(pipeline.Nodes, *edge.FromNodeInstanceId)),
+			ToNodeInstanceSlug:   types.StringValue(getSlugForNodeID(pipeline.Nodes, *edge.ToNodeInstanceId)),
+			Condition: ResourcePipelineCondition{
+				Operator:   types.StringValue(*edge.Conditions.Operator),
+				Conditions: make([]ResourcePipelineConditionCondition, len(edge.Conditions.Conditions)),
+			},
+		}
+
+		for j, condition := range edge.Conditions.Conditions {
+			key := types.StringNull()
+			if k, ok := condition.Config["key"].(string); ok {
+				key = types.StringValue(k)
+			}
+
+			rate := types.StringNull()
+			if r, ok := condition.Config["rate"].(string); ok && r != "" {
+				rate = types.StringValue(r)
+			}
+
+			value := types.ListNull(types.StringType)
+			if v, ok := condition.Config["value"].([]interface{}); ok && len(v) > 0 {
+				values := make([]attr.Value, len(v))
+				for k, val := range v {
+					if strVal, ok := val.(string); ok {
+						values[k] = types.StringValue(strVal)
+					}
+				}
+				value = types.ListValueMust(types.StringType, values)
+			}
+
+			edges[i].Condition.Conditions[j] = ResourcePipelineConditionCondition{
+				TypeID: types.StringValue(*condition.TypeId),
+				Config: ResourcePipelineConditionConditionConfig{
+					Key:   key,
+					Value: value,
+					Rate:  rate,
+				},
+			}
+		}
+	}
+	sortEdgesByConfigOrder(edges, data.Edges)
+	data.Edges = edges
 
 	tflog.Trace(ctx, "updated a pipeline resource")
 

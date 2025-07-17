@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -26,14 +27,10 @@ type ResourceTransform struct {
 }
 
 type ResourceTransformModel struct {
-	ID          types.String            `tfsdk:"id"`
-	Name        types.String            `tfsdk:"name"`
-	Description types.String            `tfsdk:"description"`
-	Config      ResourceTransformConfig `tfsdk:"config"`
-}
-
-type ResourceTransformConfig struct {
-	Operations types.Dynamic `tfsdk:"operations"`
+	ID          types.String  `tfsdk:"id"`
+	Name        types.String  `tfsdk:"name"`
+	Description types.String  `tfsdk:"description"`
+	Config      types.Dynamic `tfsdk:"config"`
 }
 
 func NewResourceTransform() resource.Resource {
@@ -96,16 +93,9 @@ func (r *ResourceTransform) Schema(
 				MarkdownDescription: "Description of the transform",
 				Optional:            true,
 			},
-		},
-		Blocks: map[string]schema.Block{
-			"config": schema.SingleNestedBlock{
+			"config": schema.DynamicAttribute{
 				MarkdownDescription: "Transform configuration",
-				Attributes: map[string]schema.Attribute{
-					"operations": schema.DynamicAttribute{
-						MarkdownDescription: "List of operations to perform in the transform",
-						Required:            true,
-					},
-				},
+				Required:            true,
 			},
 		},
 	}
@@ -123,21 +113,18 @@ func (r *ResourceTransform) Create(
 		return
 	}
 
-	operations, err := parseOperations(ctx, data.Config.Operations)
+	transformConfig, err := parseTransformConfig(ctx, data.Config)
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Failed to parse operations",
-			fmt.Sprintf("Error parsing operations: %s", err.Error()),
+			"Failed to parse transform config",
+			fmt.Sprintf("Error parsing transform config: %s", err.Error()),
 		)
 		return
 	}
-
 	request := monad.RoutesCreateTransformRequest{
 		Name:        data.Name.ValueString(),
 		Description: data.Description.ValueStringPointer(),
-		Config: &monad.RoutesTransformConfig{
-			Operations: operations,
-		},
+		Config:      transformConfig,
 	}
 
 	transform, monadResp, err := r.client.OrganizationTransformsAPI.
@@ -159,7 +146,33 @@ func (r *ResourceTransform) Create(
 		return
 	}
 
+	description := types.StringNull()
+	if transform.Description != nil && *transform.Description != "" {
+		description = types.StringValue(*transform.Description)
+	}
+
+	config, err := transformConfigToMap(transform.Config)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Failed to convert transform config",
+			fmt.Sprintf("Error converting config: %s", err),
+		)
+		return
+	}
+
+	tfConfig, err := AnyToDynamic(config)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Failed to convert transform config",
+			fmt.Sprintf("Error converting config: %s", err),
+		)
+		return
+	}
+
 	data.ID = types.StringValue(*transform.Id)
+	data.Name = types.StringValue(*transform.Name)
+	data.Description = description
+	data.Config = tfConfig
 
 	tflog.Trace(ctx, "created a transform resource")
 
@@ -197,9 +210,33 @@ func (r *ResourceTransform) Read(
 		return
 	}
 
+	description := types.StringNull()
+	if transform.Description != nil && *transform.Description != "" {
+		description = types.StringValue(*transform.Description)
+	}
+
+	config, err := transformConfigToMap(transform.Config)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Failed to convert transform config",
+			fmt.Sprintf("Error converting config: %s", err),
+		)
+		return
+	}
+
+	tfConfig, err := AnyToDynamic(config)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Failed to convert transform config",
+			fmt.Sprintf("Error converting config: %s", err),
+		)
+		return
+	}
+
 	data.ID = types.StringValue(*transform.Id)
 	data.Name = types.StringValue(*transform.Name)
-	data.Description = types.StringValue(*transform.Description)
+	data.Description = description
+	data.Config = tfConfig
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -215,11 +252,11 @@ func (r *ResourceTransform) Update(
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	operations, err := parseOperations(ctx, data.Config.Operations)
+	transformConfig, err := parseTransformConfig(ctx, data.Config)
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Failed to parse operations",
-			fmt.Sprintf("Error parsing operations: %s", err.Error()),
+			"Failed to parse transform config",
+			fmt.Sprintf("Error parsing transform config: %s", err.Error()),
 		)
 		return
 	}
@@ -227,9 +264,7 @@ func (r *ResourceTransform) Update(
 	request := monad.RoutesUpdateTransformRequest{
 		Name:        data.Name.ValueString(),
 		Description: data.Description.ValueStringPointer(),
-		Config: &monad.RoutesTransformConfig{
-			Operations: operations,
-		},
+		Config:      transformConfig,
 	}
 
 	transform, monadResp, err := r.client.OrganizationTransformsAPI.
@@ -251,13 +286,55 @@ func (r *ResourceTransform) Update(
 		return
 	}
 
+	description := types.StringNull()
+	if transform.Description != nil && *transform.Description != "" {
+		description = types.StringValue(*transform.Description)
+	}
+
+	config, err := transformConfigToMap(transform.Config)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Failed to convert transform config",
+			fmt.Sprintf("Error converting config: %s", err),
+		)
+		return
+	}
+
+	tfConfig, err := AnyToDynamic(config)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Failed to convert transform config",
+			fmt.Sprintf("Error converting config: %s", err),
+		)
+		return
+	}
+
 	data.ID = types.StringValue(*transform.Id)
 	data.Name = types.StringValue(*transform.Name)
-	data.Description = types.StringValue(*transform.Description)
+	data.Description = description
+	data.Config = tfConfig
 
 	tflog.Trace(ctx, "updated a transform resource")
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func transformConfigToMap(in *monad.ModelsTransformConfig) (map[string]any, error) {
+	if in == nil {
+		return nil, nil
+	}
+
+	jsonB, err := json.Marshal(in)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal transform config: %w", err)
+	}
+
+	config := make(map[string]any)
+	if err := json.Unmarshal(jsonB, &config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal transform config: %w", err)
+	}
+
+	return config, nil
 }
 
 func (r *ResourceTransform) Delete(
@@ -297,6 +374,40 @@ func (r *ResourceTransform) ImportState(
 	resp *resource.ImportStateResponse,
 ) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+func parseTransformConfig(ctx context.Context, configDynamic types.Dynamic) (*monad.RoutesTransformConfig, error) {
+	if configDynamic.IsNull() || configDynamic.IsUnknown() {
+		return nil, nil
+	}
+
+	configMap, err := tfDynamicToMapAny(configDynamic)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert config to map: %w", err)
+	}
+
+	operationsInterface, exists := configMap["operations"]
+	if !exists {
+		return &monad.RoutesTransformConfig{}, nil
+	}
+
+	operationsAttrValue, _, err := anyToAttrValue(operationsInterface)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert operations to attr.Value: %w", err)
+	}
+
+	operationsDynamic := types.DynamicValue(operationsAttrValue)
+
+	operations, err := parseOperations(ctx, operationsDynamic)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse operations: %w", err)
+	}
+
+	transformConfig := &monad.RoutesTransformConfig{
+		Operations: operations,
+	}
+
+	return transformConfig, nil
 }
 
 func parseOperations(_ context.Context, operationsDynamic types.Dynamic) ([]monad.RoutesTransformOperation, error) {

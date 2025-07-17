@@ -82,7 +82,6 @@ func getConnectorSchema() schema.Schema {
 					"secrets": schema.DynamicAttribute{
 						MarkdownDescription: "Settings for the connector",
 						Optional:            true,
-						Sensitive:           true,
 					},
 				},
 			},
@@ -100,6 +99,11 @@ func connectorConfigToTF(inSettings, inSecrets map[string]any) (*ResourceConnect
 	if err != nil {
 		return nil, err
 	}
+
+	if settings.IsNull() && secrets.IsNull() {
+		return nil, nil
+	}
+
 	return &ResourceConnectorConfig{
 		Settings: settings,
 		Secrets:  secrets,

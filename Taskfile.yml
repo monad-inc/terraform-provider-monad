@@ -19,13 +19,6 @@ tasks:
       - build
     cmd: terraform destroy -auto-approve
 
-  example-import:
-    desc: "Import resources from example terraform file in examples directory and create configuration files"
-    dir: examples/example-demo-pipeline
-    deps:
-      - build
-    cmd: terraform plan -generate-config-out=imported-configs.tf
-
   generate:
     desc: "Generate documentation and run formatting for the provider"
     dir: tools
