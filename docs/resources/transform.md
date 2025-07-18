@@ -17,20 +17,13 @@ Monad Secret
 
 ### Required
 
+- `config` (Dynamic) Transform configuration
 - `name` (String) Name of the transform
 
 ### Optional
 
-- `config` (Block, Optional) Transform configuration (see [below for nested schema](#nestedblock--config))
 - `description` (String) Description of the transform
 
 ### Read-Only
 
 - `id` (String) Transform identifier
-
-<a id="nestedblock--config"></a>
-### Nested Schema for `config`
-
-Required:
-
-- `operations` (Dynamic) List of operations to perform in the transform

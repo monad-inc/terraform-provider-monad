@@ -34,5 +34,5 @@ Monad Connector
 
 Optional:
 
-- `secrets` (Dynamic, Sensitive) Settings for the connector
+- `secrets` (Dynamic) Settings for the connector
 - `settings` (Dynamic) Settings for the connector
