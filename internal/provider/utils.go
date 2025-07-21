@@ -11,10 +11,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-func ptr[T any](v T) *T {
-	return &v
-}
-
 func getResponseBody(resp *http.Response) []byte {
 	if resp == nil || resp.Body == nil {
 		return nil
@@ -53,7 +49,7 @@ func tfObjectToMapAny(ctx context.Context, obj types.Object) (map[string]any, er
 
 	result := make(map[string]any)
 	attrs := obj.Attributes()
-	
+
 	for key, attrValue := range attrs {
 		converted, err := tfValueToAny(ctx, attrValue)
 		if err != nil {
@@ -61,7 +57,7 @@ func tfObjectToMapAny(ctx context.Context, obj types.Object) (map[string]any, er
 		}
 		result[key] = converted
 	}
-	
+
 	return result, nil
 }
 
@@ -72,7 +68,7 @@ func tfMapToMapAny(ctx context.Context, mapVal types.Map) (map[string]any, error
 
 	result := make(map[string]any)
 	elements := mapVal.Elements()
-	
+
 	for key, element := range elements {
 		converted, err := tfValueToAny(ctx, element)
 		if err != nil {
@@ -80,7 +76,7 @@ func tfMapToMapAny(ctx context.Context, mapVal types.Map) (map[string]any, error
 		}
 		result[key] = converted
 	}
-	
+
 	return result, nil
 }
 
@@ -128,7 +124,7 @@ func tfListToSliceAny(ctx context.Context, list types.List) ([]any, error) {
 
 	elements := list.Elements()
 	result := make([]any, len(elements))
-	
+
 	for i, element := range elements {
 		converted, err := tfValueToAny(ctx, element)
 		if err != nil {
@@ -136,7 +132,7 @@ func tfListToSliceAny(ctx context.Context, list types.List) ([]any, error) {
 		}
 		result[i] = converted
 	}
-	
+
 	return result, nil
 }
 
@@ -147,7 +143,7 @@ func tfSetToSliceAny(ctx context.Context, set types.Set) ([]any, error) {
 
 	elements := set.Elements()
 	result := make([]any, len(elements))
-	
+
 	i := 0
 	for _, element := range elements {
 		converted, err := tfValueToAny(ctx, element)
@@ -157,7 +153,7 @@ func tfSetToSliceAny(ctx context.Context, set types.Set) ([]any, error) {
 		result[i] = converted
 		i++
 	}
-	
+
 	return result, nil
 }
 
@@ -168,7 +164,7 @@ func tfTupleToSliceAny(ctx context.Context, tuple types.Tuple) ([]any, error) {
 
 	elements := tuple.Elements()
 	result := make([]any, len(elements))
-	
+
 	for i, element := range elements {
 		converted, err := tfValueToAny(ctx, element)
 		if err != nil {
@@ -176,7 +172,7 @@ func tfTupleToSliceAny(ctx context.Context, tuple types.Tuple) ([]any, error) {
 		}
 		result[i] = converted
 	}
-	
+
 	return result, nil
 }
 
@@ -205,7 +201,7 @@ func anyToAttrValue(v any) (attr.Value, attr.Type, error) {
 		// Convert slice to tuple (which can handle heterogeneous types)
 		elements := make([]attr.Value, len(val))
 		elementTypes := make([]attr.Type, len(val))
-		
+
 		for i, elem := range val {
 			elemValue, elemType, err := anyToAttrValue(elem)
 			if err != nil {
@@ -214,7 +210,7 @@ func anyToAttrValue(v any) (attr.Value, attr.Type, error) {
 			elements[i] = elemValue
 			elementTypes[i] = elemType
 		}
-		
+
 		if len(elements) == 0 {
 			// For empty slices, return an empty tuple
 			tupleValue, diags := types.TupleValue([]attr.Type{}, []attr.Value{})
@@ -223,18 +219,18 @@ func anyToAttrValue(v any) (attr.Value, attr.Type, error) {
 			}
 			return tupleValue, types.TupleType{ElemTypes: []attr.Type{}}, nil
 		}
-		
+
 		tupleValue, diags := types.TupleValue(elementTypes, elements)
 		if diags.HasError() {
 			return nil, nil, fmt.Errorf("error creating tuple value: %s", diags)
 		}
 		return tupleValue, types.TupleType{ElemTypes: elementTypes}, nil
-		
+
 	case map[string]any:
 		// Convert map to object
 		attributes := make(map[string]attr.Value)
 		attributeTypes := make(map[string]attr.Type)
-		
+
 		for key, value := range val {
 			attrValue, attrType, err := anyToAttrValue(value)
 			if err != nil {
@@ -243,13 +239,13 @@ func anyToAttrValue(v any) (attr.Value, attr.Type, error) {
 			attributes[key] = attrValue
 			attributeTypes[key] = attrType
 		}
-		
+
 		objectValue, diags := types.ObjectValue(attributeTypes, attributes)
 		if diags.HasError() {
 			return nil, nil, fmt.Errorf("error creating object value: %s", diags)
 		}
 		return objectValue, types.ObjectType{AttrTypes: attributeTypes}, nil
-		
+
 	default:
 		// Handle interface{} values by using reflection
 		rv := reflect.ValueOf(v)
@@ -272,16 +268,16 @@ func anyToAttrValue(v any) (attr.Value, attr.Type, error) {
 
 // AnyToDynamic converts a map[string]any to types.Dynamic
 func AnyToDynamic(in map[string]any) (types.Dynamic, error) {
-	if in == nil || len(in) == 0 {
+	if len(in) == 0 {
 		return types.DynamicNull(), nil
 	}
-	
+
 	// Convert the map to an ObjectValue
 	attrValue, _, err := anyToAttrValue(in)
 	if err != nil {
 		return types.DynamicNull(), fmt.Errorf("error converting map to attr.Value: %w", err)
 	}
-	
+
 	// Wrap the ObjectValue in a DynamicValue
 	return types.DynamicValue(attrValue), nil
 }
