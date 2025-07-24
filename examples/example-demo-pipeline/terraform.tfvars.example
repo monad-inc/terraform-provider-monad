@@ -1,0 +1,5 @@
+# Monad API token for authentication
+api_token = "your-organization-api-key"
+
+# Organization ID for all resources
+organization_id = "your-organization-id-here"

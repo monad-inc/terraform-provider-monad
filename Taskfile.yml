@@ -1,0 +1,25 @@
+version: '3'
+
+tasks:
+  build:
+    desc: "build terraform provider"
+    cmd: go build -o terraform-provider-monad .
+
+  example-apply:
+    desc: "Run example terraform file in examples directory"
+    dir: examples/example-demo-pipeline
+    deps:
+      - build
+    cmd: terraform apply -auto-approve
+
+  example-destroy:
+    desc: "Run destroy on example terraform file in examples directory"
+    dir: examples/example-demo-pipeline
+    deps:
+      - build
+    cmd: terraform destroy -auto-approve
+
+  generate:
+    desc: "Generate documentation and run formatting for the provider"
+    dir: tools
+    cmd: go generate

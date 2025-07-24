@@ -3,6 +3,7 @@ package client
 import (
 	"crypto/tls"
 	"net/http"
+	"os"
 	"time"
 
 	monad "github.com/monad-inc/sdk/go"
@@ -15,9 +16,17 @@ type Client struct {
 }
 
 func NewMonadAPIClient(host, apiToken, organizationID string, isInsecure bool) *Client {
+	debugEnvvar := os.Getenv("DEBUG")
+
+	var debug bool
+	if debugEnvvar == "true" {
+		debug = true
+	}
+
 	return &Client{
 		OrganizationID: organizationID,
 		APIClient: monad.NewAPIClient(&monad.Configuration{
+			Debug:  debug,
 			Scheme: "https",
 			Servers: []monad.ServerConfiguration{
 				{

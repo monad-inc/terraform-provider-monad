@@ -1,104 +1,54 @@
-# Terraform Provider for Monad
+# Terraform Monad Provider
 
-This provider allows you to manage Monad outputs using Terraform.
+- Terraform: https://www.terraform.io
+- Monad: https://beta.monad.com
+- Community: [Join #monad on Slack →](https://join.slack.com/t/monad-community/shared_invite/zt-2l1xvgdv8-JqfJgqHfQFPqRBQO4TdoYQ)
 
-## Features
+## Requirements
 
-- **HTTP Output**: Configure HTTP endpoints to send data to external APIs
-- **PostgreSQL Output**: Configure PostgreSQL databases to store data
-- Both output types use the unified Monad `/v2/{organization_id}/outputs` API
+- [Terraform](https://www.terraform.io/downloads.html) 0.14.x
+- [Go](https://golang.org/doc/install) 1.21 (to build the provider plugin)
 
-## Usage
+## Building The Provider
 
-### Provider Configuration
+Clone repository to: `$GOPATH/src/github.com/monad-inc/terraform-provider-monad`
 
-```hcl
-terraform {
-  required_providers {
-    monad = {
-      source = "monad-inc/monad"
-    }
-  }
-}
-
-provider "monad" {
-  base_url        = "https://api.monad.inc"  # Optional, defaults to this value
-  api_token       = var.monad_api_token       # Can use MONAD_API_TOKEN env var
-  organization_id = var.organization_id       # Can use MONAD_ORGANIZATION_ID env var
-}
+```sh
+$ export GOPATH=$(go env GOPATH)
+$ mkdir -p $GOPATH/src/github.com/monad-inc; cd $GOPATH/src/github.com/monad-inc
+$ git clone git@github.com:monad-inc/terraform-provider-monad
 ```
 
-### HTTP Output Example
+Enter the provider directory and build the provider
 
-```hcl
-resource "monad_http_output" "webhook" {
-  name        = "webhook-output"
-  description = "Send logs to external webhook"
-  
-  config {
-    settings {
-      endpoint             = "https://api.example.com/webhooks/logs"
-      method              = "POST"
-      headers = {
-        "Content-Type" = "application/json"
-        "User-Agent"   = "Monad-Output/1.0"
-      }
-      max_batch_data_size    = 1024
-      max_batch_record_count = 100
-      payload_structure      = "array"
-      rate_limit            = 10
-      tls_skip_verify       = false
-    }
-    
-    secrets {
-      auth_headers = {
-        "Authorization" = "Bearer ${var.webhook_token}"
-        "X-API-Key"     = var.api_key
-      }
-    }
-  }
-}
+```sh
+$ cd $GOPATH/src/github.com/monad-inc/terraform-provider-monad
+$ go build -o terraform-provider-monad
 ```
 
-### PostgreSQL Output Example
+## Using the provider
 
-```hcl
-resource "monad_postgresql_output" "database" {
-  name        = "postgres-logs"
-  description = "Store logs in PostgreSQL database"
-  
-  config {
-    settings {
-      host         = "localhost"
-      port         = 5432
-      database     = "logs"
-      table        = "events"
-      user         = "logger"
-      column_names = ["timestamp", "level", "message", "source"]
-    }
-    
-    secrets {
-      password = var.db_password
-      # Alternatively, use connection string:
-      # connection_string = "postgresql://user:pass@host:5432/dbname"
-    }
-  }
-}
+If you're building the provider, follow the instructions to [install it as a plugin.](https://www.terraform.io/docs/plugins/basics.html#installing-a-plugin) After placing it into your plugins directory, run `terraform init` to initialize it.
+
+Further [usage documentation is available on the Terraform website](https://registry.terraform.io/providers/monad-inc/monad/latest/docs).
+
+## Developing the Provider
+
+If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (version 1.21+ is _required_). You'll also need to correctly setup a [GOPATH](http://golang.org/doc/code.html#GOPATH), as well as adding `$GOPATH/bin` to your `$PATH`.
+
+To compile the provider, run `go build`. This will build the provider and put the provider binary in the current directory.
+
+```sh
+$ go build -o terraform-provider-monad
 ```
 
-## Environment Variables
+In order to test the provider, you can simply run `go test`.
 
-- `MONAD_BASE_URL` - Base URL for the Monad API
-- `MONAD_API_TOKEN` - API token for authentication
-- `MONAD_ORGANIZATION_ID` - Organization ID for all resources
-
-## Building
-
-```bash
-go build -o terraform-provider-monad
+```sh
+$ go test ./...
 ```
 
-## Development
+### Development with Local Provider
 
 To use the provider locally:
 
@@ -110,58 +60,99 @@ provider_installation {
   dev_overrides {
     "monad-inc/monad" = "/path/to/your/terraform-provider-monad"
   }
-  
+
   direct {}
 }
 ```
 
 3. Use the provider in your Terraform configurations
 
+### Using Task Runner
+
+This project includes a Taskfile for common development tasks:
+
+```sh
+# Build the provider
+$ task build
+
+# Generate documentation
+$ task generate
+
+# Apply example configuration
+$ task example-apply
+
+# Destroy example configuration
+$ task example-destroy
+```
+
+## Provider Configuration
+
+```hcl
+terraform {
+  required_providers {
+    monad = {
+      source = "monad-inc/monad"
+    }
+  }
+}
+
+provider "monad" {
+  base_url        = "https://beta.monad.com"  # Optional, defaults to this value
+  api_token       = var.monad_api_token       # Can use MONAD_API_TOKEN env var
+  organization_id = var.organization_id       # Can use MONAD_ORGANIZATION_ID env var
+  use_insecure    = false                     # Can use MONAD_USE_INSECURE env var
+}
+```
+
+## Environment Variables
+
+- `MONAD_BASE_URL` - Base URL for the Monad API
+- `MONAD_API_TOKEN` - API token for authentication
+- `MONAD_ORGANIZATION_ID` - Organization ID for all resources
+- `MONAD_USE_INSECURE` - Skip TLS verification for Monad API. (Not recommended for production use)
+
 ## Resources
 
-### monad_http_output
+### monad_secret
 
-#### Configuration
+Manages organization secrets that can be referenced by other resources.
+
+- `name` (string, required) - Name of the secret
+- `value` (string, required, sensitive) - Secret value
+- `reference` (string, computed) - Reference string to use in other resources
+
+### monad_pipeline
+
+Manages data pipelines that connect inputs to outputs with conditional logic.
+
+- `name` (string, required) - Name of the pipeline
+- `description` (string, optional) - Description of the pipeline
+- `nodes` (list, required) - Pipeline nodes configuration
+- `edges` (list, required) - Pipeline edge connections
+
+### monad_input
+
+Generic input connector for data sources.
+
+- `name` (string, required) - Name of the input
+- `description` (string, optional) - Description of the input
+- `type` (string, required) - Type of input connector (e.g., "demo", "okta_systemlog")
+- `config` (block, optional) - Input configuration
+
+### monad_output
+
+Generic output connector for data destinations.
 
 - `name` (string, required) - Name of the output
 - `description` (string, optional) - Description of the output
-- `config` (block, optional) - HTTP configuration
-  - `settings` (block, optional) - HTTP settings
-    - `endpoint` (string, required) - HTTP endpoint URL
-    - `method` (string, optional) - HTTP method
-    - `headers` (map, optional) - Non-secret headers
-    - `max_batch_data_size` (number, optional) - Maximum batch size in KB
-    - `max_batch_record_count` (number, optional) - Maximum records per batch
-    - `payload_structure` (string, optional) - Payload structure type
-    - `rate_limit` (number, optional) - Requests per second limit
-    - `tls_skip_verify` (boolean, optional) - Skip TLS verification
-    - `wrapper_key` (string, optional) - Wrapper key for wrapped payloads
-  - `secrets` (block, optional) - HTTP secrets
-    - `auth_headers` (map, optional, sensitive) - Authentication headers
+- `type` (string, required) - Type of output connector (e.g., "http", "postgresql")
+- `config` (block, optional) - Output configuration
 
-### monad_postgresql_output
+### monad_transform
 
-#### Configuration
+Generic transform connector for data transformations.
 
-- `name` (string, required) - Name of the output
-- `description` (string, optional) - Description of the output
-- `config` (block, optional) - PostgreSQL configuration
-  - `settings` (block, optional) - PostgreSQL settings
-    - `host` (string, required) - Database host
-    - `port` (number, optional) - Database port
-    - `database` (string, required) - Database name
-    - `table` (string, required) - Table name
-    - `user` (string, required) - Database user
-    - `column_names` (list, optional) - Column names for data
-  - `secrets` (block, optional) - PostgreSQL secrets
-    - `connection_string` (string, optional, sensitive) - Complete connection string
-    - `password` (string, optional, sensitive) - Database password
-
-## Import
-
-Both resources support import using the output ID:
-
-```bash
-terraform import monad_http_output.example output-id-here
-terraform import monad_postgresql_output.example output-id-here
-```
+- `name` (string, required) - Name of the transform
+- `description` (string, optional) - Description of the transform
+- `type` (string, required) - Type of transform connector
+- `config` (block, optional) - Transform configuration
