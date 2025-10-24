@@ -32,6 +32,7 @@ type ResourcePipelineModel struct {
 	Description types.String           `tfsdk:"description"`
 	Nodes       []ResourcePipelineNode `tfsdk:"nodes"`
 	Edges       []ResourcePipelineEdge `tfsdk:"edges"`
+	Enabled     types.Bool             `tfsdk:"enabled"`
 }
 
 type ResourcePipelineNode struct {
@@ -121,6 +122,10 @@ func (r *ResourcePipeline) Schema(
 			},
 			"description": schema.StringAttribute{
 				MarkdownDescription: "Description of the pipeline",
+				Optional:            true,
+			},
+			"enabled": schema.BoolAttribute{
+				MarkdownDescription: "Whether the pipeline is enabled",
 				Optional:            true,
 			},
 		},
@@ -227,10 +232,15 @@ func (r *ResourcePipeline) Create(
 		return
 	}
 
+	enabled := true
+	if !data.Enabled.IsNull() {
+		enabled = data.Enabled.ValueBool()
+	}
+
 	request := monad.RoutesV2CreatePipelineRequest{
 		Name:        data.Name.ValueString(),
 		Description: data.Description.ValueStringPointer(),
-		Enabled:     true,
+		Enabled:     enabled,
 		Nodes:       make([]monad.RoutesV2PipelineRequestNode, len(data.Nodes)),
 		Edges:       make([]monad.RoutesV2PipelineRequestEdge, len(data.Edges)),
 	}
@@ -394,7 +404,7 @@ func sortNodesByConfigOrder(nodes []ResourcePipelineNode, configNodes []Resource
 		slugJ := nodes[j].Slug.ValueString()
 		orderI, okI := configOrder[slugI]
 		orderJ, okJ := configOrder[slugJ]
-		
+
 		if okI && okJ {
 			return orderI < orderJ
 		}
@@ -420,7 +430,7 @@ func sortEdgesByConfigOrder(edges []ResourcePipelineEdge, configEdges []Resource
 		keyJ := edges[j].FromNodeInstanceSlug.ValueString() + "->" + edges[j].ToNodeInstanceSlug.ValueString()
 		orderI, okI := configOrder[keyI]
 		orderJ, okJ := configOrder[keyJ]
-		
+
 		if okI && okJ {
 			return orderI < orderJ
 		}

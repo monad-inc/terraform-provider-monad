@@ -123,7 +123,7 @@ func (r *ResourceOutput) Create(
 	}
 
 	description := types.StringNull()
-	if output.Description != nil && *output.Description != "" {
+	if output.Description != nil {
 		description = types.StringValue(*output.Description)
 	}
 
@@ -179,7 +179,7 @@ func (r *ResourceOutput) Read(
 	}
 
 	description := types.StringNull()
-	if output.Description != nil && *output.Description != "" {
+	if output.Description != nil {
 		description = types.StringValue(*output.Description)
 	}
 
