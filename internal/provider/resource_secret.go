@@ -147,12 +147,10 @@ func (r *ResourceSecret) Create(
 		return
 	}
 
-	val := data.Value.ValueString()
-
 	request := monad.RoutesV2CreateOrUpdateSecretRequest{
 		Name:        data.Name.ValueStringPointer(),
 		Description: data.Description.ValueStringPointer(),
-		Value:       &val,
+		Value:       data.Value.ValueStringPointer(),
 	}
 
 	secret, monadResp, err := r.client.SecretsAPI.
@@ -172,7 +170,7 @@ func (r *ResourceSecret) Create(
 	}
 
 	data.ID = types.StringValue(*secret.Id)
-	data.ValueHash = types.StringValue(r.computeValueHash(ctx, val))
+	data.ValueHash = types.StringValue(r.computeValueHash(ctx, data.Value.ValueString()))
 
 	tflog.Trace(ctx, "created a secret resource")
 
