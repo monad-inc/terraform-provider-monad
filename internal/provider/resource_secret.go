@@ -2,7 +2,11 @@ package provider
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -29,6 +33,7 @@ type ResourceSecretModel struct {
 	Name        types.String `tfsdk:"name"`
 	Description types.String `tfsdk:"description"`
 	Value       types.String `tfsdk:"value"`
+	ValueHash   types.String `tfsdk:"value_hash"`
 }
 
 func NewResourceSecret() resource.Resource {
@@ -95,9 +100,39 @@ func (r *ResourceSecret) Schema(
 				MarkdownDescription: "Value of the secret",
 				Required:            true,
 				Sensitive:           true,
+				WriteOnly:           true,
+			},
+			"value_hash": schema.StringAttribute{
+				MarkdownDescription: "HMAC hash of the secret value",
+				Computed:            true,
 			},
 		},
 	}
+}
+
+func (r *ResourceSecret) computeValueHash(ctx context.Context, value string) string {
+	key := os.Getenv("MONAD_SECRETS_KEY")
+	if key == "" {
+		key = r.client.OrganizationID
+	}
+
+	keyBytes := []byte(key)
+
+	// Pad with zeros if key is below recommended 32 bytes
+	if len(keyBytes) < 32 {
+		tflog.Warn(ctx, "HMAC key length is below recommended 32 bytes, padding with zeros", map[string]any{
+			"original_length": len(keyBytes),
+			"padded_length":   32,
+			"source":          map[bool]string{true: "MONAD_SECRETS_KEY", false: "OrganizationID"}[os.Getenv("MONAD_SECRETS_KEY") != ""],
+		})
+		padded := make([]byte, 32)
+		copy(padded, keyBytes)
+		keyBytes = padded
+	}
+
+	h := hmac.New(sha256.New, keyBytes)
+	h.Write([]byte(value))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func (r *ResourceSecret) Create(
@@ -135,6 +170,7 @@ func (r *ResourceSecret) Create(
 	}
 
 	data.ID = types.StringValue(*secret.Id)
+	data.ValueHash = types.StringValue(r.computeValueHash(ctx, data.Value.ValueString()))
 
 	tflog.Trace(ctx, "created a secret resource")
 
@@ -220,6 +256,7 @@ func (r *ResourceSecret) Update(
 	data.ID = types.StringValue(*secret.Id)
 	data.Name = types.StringValue(*secret.Name)
 	data.Description = types.StringValue(*secret.Description)
+	data.ValueHash = types.StringValue(r.computeValueHash(ctx, data.Value.ValueString()))
 
 	tflog.Trace(ctx, "updated a secret resource")
 
