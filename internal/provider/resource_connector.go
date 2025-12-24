@@ -80,7 +80,7 @@ func getConnectorSchema() schema.Schema {
 						Optional:            true,
 					},
 					"secrets": schema.DynamicAttribute{
-						MarkdownDescription: "Settings for the connector",
+						MarkdownDescription: "Secrets for the connector",
 						Optional:            true,
 					},
 				},
