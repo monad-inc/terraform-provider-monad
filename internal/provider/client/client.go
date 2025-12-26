@@ -26,8 +26,9 @@ func NewMonadAPIClient(host, apiToken, organizationID string, isInsecure bool) *
 	return &Client{
 		OrganizationID: organizationID,
 		APIClient: monad.NewAPIClient(&monad.Configuration{
-			Debug:  debug,
-			Scheme: "https",
+			Debug:     debug,
+			UserAgent: "terraform-provider-monad/1.0",
+			Scheme:    "https",
 			Servers: []monad.ServerConfiguration{
 				{
 					URL: host + "/api",
