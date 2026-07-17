@@ -113,25 +113,12 @@ func (r *ResourceOutput) Create(
 		return
 	}
 
-	config, err := connectorConfigToTF(output.Config.Settings, output.Config.Secrets)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert output config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
-	description := types.StringNull()
-	if output.Description != nil {
-		description = types.StringValue(*output.Description)
-	}
-
+	// Only the computed `id` is taken from the response; name/description/type/
+	// config are plan-known and must be returned unchanged. config carries
+	// Dynamic settings/secrets whose planned cty type must be preserved, and
+	// secrets are write-only (never echoed). Rebuilding config from the response
+	// trips "Provider produced inconsistent result after apply".
 	data.ID = types.StringValue(*output.Id)
-	data.Name = types.StringValue(*output.Name)
-	data.Description = description
-	data.ComponentType = types.StringValue(*output.Type)
-	data.Config = config
 
 	tflog.Trace(ctx, "created a output resource")
 
@@ -169,17 +156,8 @@ func (r *ResourceOutput) Read(
 		return
 	}
 
-	config, err := connectorConfigToTF(output.Config.Settings, output.Config.Secrets)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert output config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
 	description := types.StringNull()
-	if output.Description != nil {
+	if output.Description != nil && *output.Description != "" {
 		description = types.StringValue(*output.Description)
 	}
 
@@ -187,7 +165,7 @@ func (r *ResourceOutput) Read(
 	data.Name = types.StringValue(*output.Name)
 	data.Description = description
 	data.ComponentType = types.StringValue(*output.Type)
-	data.Config = config
+	// config preserved from prior state (Dynamic settings/secrets; see Create).
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -224,7 +202,7 @@ func (r *ResourceOutput) Update(
 		},
 	}
 
-	output, monadResp, err := r.client.OrganizationOutputsAPI.
+	_, monadResp, err := r.client.OrganizationOutputsAPI.
 		V2OrganizationIdOutputsOutputIdPut(
 			ctx,
 			r.client.OrganizationID,
@@ -244,26 +222,8 @@ func (r *ResourceOutput) Update(
 		return
 	}
 
-	config, err := connectorConfigToTF(output.Config.Settings, output.Config.Secrets)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert output config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
-	description := types.StringNull()
-	if output.Description != nil {
-		description = types.StringValue(*output.Description)
-	}
-
-	data.ID = types.StringValue(*output.Id)
-	data.Name = types.StringValue(*output.Name)
-	data.Description = description
-	data.ComponentType = types.StringValue(*output.Type)
-	data.Config = config
-
+	// Preserve plan-known values (see Create); data already holds
+	// id/name/description/type/config from the plan.
 	tflog.Trace(ctx, "updated a output resource")
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)

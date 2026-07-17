@@ -88,24 +88,3 @@ func getConnectorSchema() schema.Schema {
 		},
 	}
 }
-
-func connectorConfigToTF(inSettings, inSecrets map[string]any) (*ResourceConnectorConfig, error) {
-	settings, err := AnyToDynamic(inSettings)
-	if err != nil {
-		return nil, err
-	}
-
-	secrets, err := AnyToDynamic(inSecrets)
-	if err != nil {
-		return nil, err
-	}
-
-	if settings.IsNull() && secrets.IsNull() {
-		return nil, nil
-	}
-
-	return &ResourceConnectorConfig{
-		Settings: settings,
-		Secrets:  secrets,
-	}, nil
-}
