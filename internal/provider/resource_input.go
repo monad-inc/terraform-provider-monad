@@ -113,25 +113,12 @@ func (r *ResourceInput) Create(
 		return
 	}
 
-	config, err := connectorConfigToTF(input.Config.Settings, input.Config.Secrets)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert input config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
-	description := types.StringNull()
-	if input.Description != nil && *input.Description != "" {
-		description = types.StringValue(*input.Description)
-	}
-
+	// Only the computed `id` is taken from the response; name/description/type/
+	// config are plan-known and must be returned unchanged. config carries
+	// Dynamic settings/secrets whose planned cty type must be preserved, and
+	// secrets are write-only (never echoed). Rebuilding config from the response
+	// trips "Provider produced inconsistent result after apply".
 	data.ID = types.StringValue(*input.Id)
-	data.Name = types.StringValue(*input.Name)
-	data.Description = description
-	data.ComponentType = types.StringValue(*input.Type)
-	data.Config = config
 
 	tflog.Trace(ctx, "created an input resource")
 
@@ -169,15 +156,6 @@ func (r *ResourceInput) Read(
 		return
 	}
 
-	config, err := connectorConfigToTF(input.Config.Settings, input.Config.Secrets)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert input config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
 	description := types.StringNull()
 	if input.Description != nil && *input.Description != "" {
 		description = types.StringValue(*input.Description)
@@ -187,7 +165,7 @@ func (r *ResourceInput) Read(
 	data.Name = types.StringValue(*input.Name)
 	data.Description = description
 	data.ComponentType = types.StringValue(*input.Type)
-	data.Config = config
+	// config preserved from prior state (Dynamic settings/secrets; see Create).
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -224,7 +202,7 @@ func (r *ResourceInput) Update(
 		},
 	}
 
-	input, monadResp, err := r.client.OrganizationInputsAPI.
+	_, monadResp, err := r.client.OrganizationInputsAPI.
 		V2OrganizationIdInputsInputIdPut(
 			ctx,
 			r.client.OrganizationID,
@@ -244,21 +222,8 @@ func (r *ResourceInput) Update(
 		return
 	}
 
-	config, err := connectorConfigToTF(input.Config.Settings, input.Config.Secrets)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert input config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
-	data.ID = types.StringValue(*input.Id)
-	data.Name = types.StringValue(*input.Name)
-	data.Description = types.StringValue(*input.Description)
-	data.ComponentType = types.StringValue(*input.Type)
-	data.Config = config
-
+	// Preserve plan-known values (see Create); data already holds
+	// id/name/description/type/config from the plan.
 	tflog.Trace(ctx, "updated an input resource")
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
