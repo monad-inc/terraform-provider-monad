@@ -156,25 +156,13 @@ func (r *ResourceEnrichment) Create(
 		return
 	}
 
-	config, err := connectorConfigToTF(enrichment.Config.Settings, enrichment.Config.Secrets)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert enrichment config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
-	description := types.StringNull()
-	if enrichment.Description != nil && *enrichment.Description != "" {
-		description = types.StringValue(*enrichment.Description)
-	}
-
+	// Only the computed `id` is taken from the response. name/description/type/
+	// config are plan-known and must be returned unchanged; config carries
+	// Dynamic settings/secrets whose planned cty type must be preserved, and
+	// secrets are write-only (the API never echoes them). Rebuilding config
+	// from the response trips "Provider produced inconsistent result after
+	// apply".
 	data.ID = types.StringValue(*enrichment.Id)
-	data.Name = types.StringValue(*enrichment.Name)
-	data.Description = description
-	data.ComponentType = types.StringValue(*enrichment.Type)
-	data.Config = config
 
 	tflog.Trace(ctx, "created an enrichment resource")
 
@@ -212,15 +200,6 @@ func (r *ResourceEnrichment) Read(
 		return
 	}
 
-	config, err := connectorConfigToTF(enrichment.Config.Settings, enrichment.Config.Secrets)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert enrichment config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
 	description := types.StringNull()
 	if enrichment.Description != nil && *enrichment.Description != "" {
 		description = types.StringValue(*enrichment.Description)
@@ -230,7 +209,7 @@ func (r *ResourceEnrichment) Read(
 	data.Name = types.StringValue(*enrichment.Name)
 	data.Description = description
 	data.ComponentType = types.StringValue(*enrichment.Type)
-	data.Config = config
+	// config preserved from prior state (Dynamic settings/secrets; see Create).
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -267,7 +246,7 @@ func (r *ResourceEnrichment) Update(
 		},
 	}
 
-	enrichment, monadResp, err := r.client.OrganizationEnrichmentsAPI.
+	_, monadResp, err := r.client.OrganizationEnrichmentsAPI.
 		V3OrganizationIdEnrichmentsEnrichmentIdPut(
 			ctx,
 			r.client.OrganizationID,
@@ -287,21 +266,8 @@ func (r *ResourceEnrichment) Update(
 		return
 	}
 
-	config, err := connectorConfigToTF(enrichment.Config.Settings, enrichment.Config.Secrets)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert enrichment config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
-	data.ID = types.StringValue(*enrichment.Id)
-	data.Name = types.StringValue(*enrichment.Name)
-	data.Description = types.StringValue(*enrichment.Description)
-	data.ComponentType = types.StringValue(*enrichment.Type)
-	data.Config = config
-
+	// Preserve plan-known values (see Create); data already holds
+	// id/name/description/type/config from the plan.
 	tflog.Trace(ctx, "updated an enrichment resource")
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
