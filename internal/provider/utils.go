@@ -80,7 +80,55 @@ func computeSecretsHash(ctx context.Context, orgID string, secrets map[string]an
 // Normalizing both through a JSON round-trip collapses those representation
 // differences (and unifies numeric types to float64) before comparison.
 func dynamicsSemanticallyEqual(a, b map[string]any) bool {
-	return reflect.DeepEqual(jsonNormalize(a), jsonNormalize(b))
+	return reflect.DeepEqual(
+		pruneEmpty(jsonNormalize(a)),
+		pruneEmpty(jsonNormalize(b)),
+	)
+}
+
+// pruneEmpty recursively removes "" / null / empty-object / empty-array map
+// entries so that a field the practitioner set to the empty string compares
+// equal to one the API omits (the API/SDK drops empty values via `omitempty`).
+// Slice elements are pruned in place but never dropped, so array length and
+// ordering — which are significant — are preserved. Booleans and numbers
+// (including false/0) are left untouched, so a genuine value change is never
+// masked.
+func pruneEmpty(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			pv := pruneEmpty(val)
+			if isEmptyForCompare(pv) {
+				continue
+			}
+			out[k] = pv
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, e := range t {
+			out[i] = pruneEmpty(e)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+func isEmptyForCompare(v any) bool {
+	switch t := v.(type) {
+	case nil:
+		return true
+	case string:
+		return t == ""
+	case map[string]any:
+		return len(t) == 0
+	case []any:
+		return len(t) == 0
+	default:
+		return false
+	}
 }
 
 // jsonNormalize collapses a value to its canonical JSON shape: map keys sorted,

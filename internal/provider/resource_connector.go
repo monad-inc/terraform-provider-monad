@@ -144,6 +144,13 @@ func refreshConnectorSettings(data *ResourceConnectorModel, apiSettings map[stri
 	}
 
 	if data.Config == nil {
+		// The resource has no config block. Only synthesize one when the API
+		// actually returned settings to store (e.g. on import); otherwise leave
+		// it absent so a block-less resource (like a dev-null sink) does not get
+		// a perpetual "remove config" diff.
+		if reconciled.IsNull() {
+			return nil
+		}
 		data.Config = &ResourceConnectorConfig{
 			SecretsHash: types.StringNull(),
 		}

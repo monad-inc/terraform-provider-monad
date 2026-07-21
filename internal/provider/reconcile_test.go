@@ -98,6 +98,22 @@ func TestDynamicsSemanticallyEqual(t *testing.T) {
 	) {
 		t.Error("different data should not compare equal")
 	}
+	// An empty-string field the API omits compares equal to the practitioner's
+	// explicit "" (the API drops empty values via omitempty). This is the
+	// transform `description: ""` case.
+	if !dynamicsSemanticallyEqual(
+		map[string]any{"operations": []any{map[string]any{"op": "drop", "description": ""}}},
+		map[string]any{"operations": []any{map[string]any{"op": "drop"}}},
+	) {
+		t.Error("explicit empty string should compare equal to an omitted field")
+	}
+	// But a real value change is still detected, not masked by pruning.
+	if dynamicsSemanticallyEqual(
+		map[string]any{"op": "drop", "description": "was here"},
+		map[string]any{"op": "drop"},
+	) {
+		t.Error("a non-empty value vs absent should be detected as drift")
+	}
 }
 
 func TestReconcileDynamicPreservesPriorType(t *testing.T) {
