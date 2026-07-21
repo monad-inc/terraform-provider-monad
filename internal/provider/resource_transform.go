@@ -210,7 +210,7 @@ func (r *ResourceTransform) Read(
 		resp.Diagnostics.AddError("Failed to convert transform config", err.Error())
 		return
 	}
-	config, err := reconcileTransformConfig(data.Config, apiConfig)
+	config, err := reconcileDynamic(data.Config, apiConfig)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to reconcile transform config", err.Error())
 		return
@@ -218,44 +218,6 @@ func (r *ResourceTransform) Read(
 	data.Config = config
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-}
-
-// reconcileTransformConfig is reconcileDynamic specialized for transforms.
-// ModelsTransformOperation carries no `description` field, so the API can never
-// round-trip an operation's description — comparing it directly would always
-// look like drift and drop the practitioner's descriptions. We therefore ignore
-// operation-level descriptions in the comparison and keep the prior state value
-// (which retains them) whenever everything else round-trips, only adopting the
-// API value on genuine operation/argument drift. On import prior state is null,
-// so the API value populates.
-func reconcileTransformConfig(prior types.Dynamic, apiConfig map[string]any) (types.Dynamic, error) {
-	priorMap, err := tfDynamicToMapAny(prior)
-	if err != nil {
-		return AnyToDynamic(apiConfig)
-	}
-	if dynamicsSemanticallyEqual(
-		stripOperationDescriptions(priorMap),
-		stripOperationDescriptions(apiConfig),
-	) {
-		return prior, nil
-	}
-	return AnyToDynamic(apiConfig)
-}
-
-// stripOperationDescriptions removes the description from each operation. It
-// mutates the throwaway comparison maps produced by tfDynamicToMapAny /
-// transformConfigToMap, never the stored state value.
-func stripOperationDescriptions(cfg map[string]any) map[string]any {
-	ops, ok := cfg["operations"].([]any)
-	if !ok {
-		return cfg
-	}
-	for _, op := range ops {
-		if m, ok := op.(map[string]any); ok {
-			delete(m, "description")
-		}
-	}
-	return cfg
 }
 
 // transformConfigToMap converts an API transform config into a plain map for
