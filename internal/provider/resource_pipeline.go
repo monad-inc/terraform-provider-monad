@@ -3,7 +3,10 @@ package provider
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"sort"
 
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -373,11 +376,291 @@ func (r *ResourcePipeline) Read(
 	data.ID = types.StringValue(*pipeline.Id)
 	data.Name = types.StringValue(*pipeline.Name)
 	data.Description = description
-	// nodes/edges/enabled are preserved from prior state: they are user-authored
-	// and rebuilding them from the API response reintroduces representation
-	// differences (see Create) that would show as a perpetual diff.
+
+	// Reconcile nodes/edges for drift without reintroducing the perpetual diffs
+	// that motivated preserving them: the API assigns node-instance ids, may
+	// generate slugs the practitioner omitted, echoes nullable edge
+	// name/description, and returns nodes/edges in server order. We rebuild the
+	// API view (mapping node-instance ids back to config slugs, sorted to the
+	// prior order), then keep the prior state verbatim when it is semantically
+	// equal — masking server-populated fields the practitioner left null so
+	// they never read as drift. On import prior state is empty, so the API view
+	// populates. Only genuine topology drift is written back.
+	data.Nodes = reconcilePipelineNodes(data.Nodes, buildPipelineStateNodes(pipeline, data.Nodes))
+	data.Edges = reconcilePipelineEdges(data.Edges, buildPipelineStateEdges(pipeline, data.Edges))
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// buildPipelineStateNodes reconstructs the node list from an API response,
+// mapped into the Terraform model and sorted to match the prior config order.
+func buildPipelineStateNodes(pipeline *monad.ModelsPipelineConfigV2, priorNodes []ResourcePipelineNode) []ResourcePipelineNode {
+	nodes := make([]ResourcePipelineNode, len(pipeline.Nodes))
+	for i, node := range pipeline.Nodes {
+		slug := types.StringNull()
+		if node.Slug != nil {
+			slug = types.StringValue(*node.Slug)
+		}
+		nodes[i] = ResourcePipelineNode{
+			ComponentType: types.StringPointerValue(node.ComponentType),
+			ComponentID:   types.StringPointerValue(node.ComponentId),
+			Slug:          slug,
+		}
+	}
+	sortNodesByConfigOrder(nodes, priorNodes)
+	return nodes
+}
+
+// buildPipelineStateEdges reconstructs the edge list from an API response,
+// resolving node-instance ids back to config slugs and sorting to prior order.
+func buildPipelineStateEdges(pipeline *monad.ModelsPipelineConfigV2, priorEdges []ResourcePipelineEdge) []ResourcePipelineEdge {
+	edges := make([]ResourcePipelineEdge, len(pipeline.Edges))
+	for i, edge := range pipeline.Edges {
+		name := types.StringNull()
+		if edge.Name != nil {
+			name = types.StringValue(*edge.Name)
+		}
+
+		description := types.StringNull()
+		if edge.Description != nil {
+			description = types.StringValue(*edge.Description)
+		}
+
+		operator := types.StringNull()
+		conditions := []ResourcePipelineConditionCondition{}
+		if edge.Conditions != nil {
+			operator = types.StringPointerValue(edge.Conditions.Operator)
+			conditions = make([]ResourcePipelineConditionCondition, len(edge.Conditions.Conditions))
+			for j, condition := range edge.Conditions.Conditions {
+				key := types.StringNull()
+				if k, ok := condition.Config["key"].(string); ok && k != "" {
+					key = types.StringValue(k)
+				}
+
+				rate := types.StringNull()
+				if rt, ok := condition.Config["rate"].(string); ok && rt != "" {
+					rate = types.StringValue(rt)
+				}
+
+				value := types.ListNull(types.StringType)
+				if v, ok := condition.Config["value"].([]interface{}); ok && len(v) > 0 {
+					values := make([]attr.Value, len(v))
+					for k, val := range v {
+						if strVal, ok := val.(string); ok {
+							values[k] = types.StringValue(strVal)
+						}
+					}
+					value = types.ListValueMust(types.StringType, values)
+				}
+
+				conditions[j] = ResourcePipelineConditionCondition{
+					TypeID: types.StringPointerValue(condition.TypeId),
+					Config: ResourcePipelineConditionConditionConfig{
+						Key:   key,
+						Value: value,
+						Rate:  rate,
+					},
+				}
+			}
+		}
+
+		fromSlug := ""
+		if edge.FromNodeInstanceId != nil {
+			fromSlug = getSlugForNodeID(pipeline.Nodes, *edge.FromNodeInstanceId)
+		}
+		toSlug := ""
+		if edge.ToNodeInstanceId != nil {
+			toSlug = getSlugForNodeID(pipeline.Nodes, *edge.ToNodeInstanceId)
+		}
+
+		edges[i] = ResourcePipelineEdge{
+			Name:                 name,
+			Description:          description,
+			FromNodeInstanceSlug: types.StringValue(fromSlug),
+			ToNodeInstanceSlug:   types.StringValue(toSlug),
+			Condition: ResourcePipelineCondition{
+				Operator:   operator,
+				Conditions: conditions,
+			},
+		}
+	}
+	sortEdgesByConfigOrder(edges, priorEdges)
+	return edges
+}
+
+func getSlugForNodeID(nodes []monad.ModelsPipelineNode, nodeID string) string {
+	for _, node := range nodes {
+		if node.Id != nil && *node.Id == nodeID && node.Slug != nil {
+			return *node.Slug
+		}
+	}
+	return ""
+}
+
+func sortNodesByConfigOrder(nodes []ResourcePipelineNode, configNodes []ResourcePipelineNode) {
+	configOrder := make(map[string]int)
+	for i, node := range configNodes {
+		configOrder[node.ComponentID.ValueString()] = i
+	}
+
+	sort.SliceStable(nodes, func(i, j int) bool {
+		orderI, okI := configOrder[nodes[i].ComponentID.ValueString()]
+		orderJ, okJ := configOrder[nodes[j].ComponentID.ValueString()]
+
+		if okI && okJ {
+			return orderI < orderJ
+		}
+		if okI {
+			return true
+		}
+		if okJ {
+			return false
+		}
+		return nodes[i].ComponentID.ValueString() < nodes[j].ComponentID.ValueString()
+	})
+}
+
+func sortEdgesByConfigOrder(edges []ResourcePipelineEdge, configEdges []ResourcePipelineEdge) {
+	edgeKey := func(e ResourcePipelineEdge) string {
+		return e.FromNodeInstanceSlug.ValueString() + "->" + e.ToNodeInstanceSlug.ValueString()
+	}
+
+	configOrder := make(map[string]int)
+	for i, edge := range configEdges {
+		configOrder[edgeKey(edge)] = i
+	}
+
+	sort.SliceStable(edges, func(i, j int) bool {
+		keyI := edgeKey(edges[i])
+		keyJ := edgeKey(edges[j])
+		orderI, okI := configOrder[keyI]
+		orderJ, okJ := configOrder[keyJ]
+
+		if okI && okJ {
+			return orderI < orderJ
+		}
+		if okI {
+			return true
+		}
+		if okJ {
+			return false
+		}
+		return keyI < keyJ
+	})
+}
+
+// reconcilePipelineNodes keeps the prior state node list when it is
+// semantically equal to the API-derived list, so genuine drift surfaces while
+// the practitioner-authored representation (including omitted, server-generated
+// slugs) is preserved. Slugs the practitioner left null are masked out of the
+// comparison so the server-assigned value never reads as drift.
+func reconcilePipelineNodes(prior, api []ResourcePipelineNode) []ResourcePipelineNode {
+	if len(prior) == 0 {
+		return api
+	}
+
+	priorSlugNull := make(map[string]bool, len(prior))
+	for _, n := range prior {
+		priorSlugNull[n.ComponentID.ValueString()] = n.Slug.IsNull()
+	}
+
+	masked := make([]ResourcePipelineNode, len(api))
+	for i, n := range api {
+		if priorSlugNull[n.ComponentID.ValueString()] {
+			n.Slug = types.StringNull()
+		}
+		masked[i] = n
+	}
+
+	if reflect.DeepEqual(jsonNormalize(pipelineNodesComparable(prior)), jsonNormalize(pipelineNodesComparable(masked))) {
+		return prior
+	}
+	return api
+}
+
+// reconcilePipelineEdges mirrors reconcilePipelineNodes for edges. Nullable
+// edge name/description that the practitioner omitted are masked so the
+// server-echoed values do not read as drift. Edges are matched positionally,
+// both lists having been sorted to the prior config order.
+func reconcilePipelineEdges(prior, api []ResourcePipelineEdge) []ResourcePipelineEdge {
+	if len(prior) == 0 {
+		return api
+	}
+
+	masked := make([]ResourcePipelineEdge, len(api))
+	copy(masked, api)
+	for i := range masked {
+		if i >= len(prior) {
+			break
+		}
+		if prior[i].Name.IsNull() {
+			masked[i].Name = types.StringNull()
+		}
+		if prior[i].Description.IsNull() {
+			masked[i].Description = types.StringNull()
+		}
+	}
+
+	if reflect.DeepEqual(jsonNormalize(pipelineEdgesComparable(prior)), jsonNormalize(pipelineEdgesComparable(masked))) {
+		return prior
+	}
+	return api
+}
+
+func pipelineNodesComparable(nodes []ResourcePipelineNode) []any {
+	out := make([]any, len(nodes))
+	for i, n := range nodes {
+		out[i] = map[string]any{
+			"component_type": stringOrNil(n.ComponentType),
+			"component_id":   stringOrNil(n.ComponentID),
+			"slug":           stringOrNil(n.Slug),
+		}
+	}
+	return out
+}
+
+func pipelineEdgesComparable(edges []ResourcePipelineEdge) []any {
+	out := make([]any, len(edges))
+	for i, e := range edges {
+		conditions := make([]any, len(e.Condition.Conditions))
+		for j, c := range e.Condition.Conditions {
+			conditions[j] = map[string]any{
+				"type_id": stringOrNil(c.TypeID),
+				"key":     stringOrNil(c.Config.Key),
+				"rate":    stringOrNil(c.Config.Rate),
+				"value":   listOrNil(c.Config.Value),
+			}
+		}
+		out[i] = map[string]any{
+			"name":        stringOrNil(e.Name),
+			"description": stringOrNil(e.Description),
+			"from":        stringOrNil(e.FromNodeInstanceSlug),
+			"to":          stringOrNil(e.ToNodeInstanceSlug),
+			"operator":    stringOrNil(e.Condition.Operator),
+			"conditions":  conditions,
+		}
+	}
+	return out
+}
+
+func stringOrNil(s types.String) any {
+	if s.IsNull() || s.IsUnknown() {
+		return nil
+	}
+	return s.ValueString()
+}
+
+func listOrNil(l types.List) any {
+	if l.IsNull() || l.IsUnknown() {
+		return nil
+	}
+	out := make([]any, 0, len(l.Elements()))
+	for _, e := range l.Elements() {
+		if s, ok := e.(types.String); ok {
+			out = append(out, s.ValueString())
+		}
+	}
+	return out
 }
 
 func (r *ResourcePipeline) Update(

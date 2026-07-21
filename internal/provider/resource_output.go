@@ -16,6 +16,7 @@ import (
 var _ resource.Resource = &ResourceOutput{}
 var _ resource.ResourceWithConfigure = &ResourceOutput{}
 var _ resource.ResourceWithImportState = &ResourceOutput{}
+var _ resource.ResourceWithModifyPlan = &ResourceOutput{}
 
 func NewResourceOutput() resource.Resource {
 	return &ResourceOutput{}
@@ -114,11 +115,15 @@ func (r *ResourceOutput) Create(
 	}
 
 	// Only the computed `id` is taken from the response; name/description/type/
-	// config are plan-known and must be returned unchanged. config carries
-	// Dynamic settings/secrets whose planned cty type must be preserved, and
-	// secrets are write-only (never echoed). Rebuilding config from the response
-	// trips "Provider produced inconsistent result after apply".
+	// settings are plan-known and must be returned unchanged (their planned cty
+	// type must be preserved — rebuilding from the response trips "Provider
+	// produced inconsistent result after apply"). Secrets are write-only, so
+	// they are nulled in state and fingerprinted into secrets_hash.
 	data.ID = types.StringValue(*output.Id)
+	if err := finalizeConnectorSecrets(ctx, r.client.OrganizationID, &data, secrets); err != nil {
+		resp.Diagnostics.AddError("Failed to fingerprint output secrets", err.Error())
+		return
+	}
 
 	tflog.Trace(ctx, "created a output resource")
 
@@ -165,7 +170,10 @@ func (r *ResourceOutput) Read(
 	data.Name = types.StringValue(*output.Name)
 	data.Description = description
 	data.ComponentType = types.StringValue(*output.Type)
-	// config preserved from prior state (Dynamic settings/secrets; see Create).
+	if err := refreshConnectorSettings(&data, output.Config.Settings); err != nil {
+		resp.Diagnostics.AddError("Failed to refresh output settings", err.Error())
+		return
+	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -182,7 +190,15 @@ func (r *ResourceOutput) Update(
 		return
 	}
 
-	settings, secrets, err := data.getSettingsAndSecrets()
+	// Write-only `secrets` are null in the plan; read them from the
+	// configuration, which is the only place their values are available.
+	var cfg ResourceConnectorModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	settings, secrets, err := cfg.getSettingsAndSecrets()
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to get settings and secrets", err.Error())
 		return
@@ -223,10 +239,27 @@ func (r *ResourceOutput) Update(
 	}
 
 	// Preserve plan-known values (see Create); data already holds
-	// id/name/description/type/config from the plan.
+	// id/name/description/type/settings from the plan. Secrets stay write-only
+	// (nulled) and secrets_hash is refreshed to match what was just sent.
+	if err := finalizeConnectorSecrets(ctx, r.client.OrganizationID, &data, secrets); err != nil {
+		resp.Diagnostics.AddError("Failed to fingerprint output secrets", err.Error())
+		return
+	}
+
 	tflog.Trace(ctx, "updated a output resource")
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func (r *ResourceOutput) ModifyPlan(
+	ctx context.Context,
+	req resource.ModifyPlanRequest,
+	resp *resource.ModifyPlanResponse,
+) {
+	if r.client == nil {
+		return
+	}
+	modifyConnectorPlanForSecrets(ctx, r.client.OrganizationID, req, resp)
 }
 
 func (r *ResourceOutput) Delete(

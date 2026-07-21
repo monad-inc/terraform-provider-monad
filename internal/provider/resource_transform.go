@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -198,11 +199,45 @@ func (r *ResourceTransform) Read(
 	data.ID = types.StringValue(*transform.Id)
 	data.Name = types.StringValue(*transform.Name)
 	data.Description = description
-	// config is preserved from prior state: it is a user-authored Dynamic value
-	// and rebuilding it from the API response would change its cty type (see
-	// Create), producing a spurious perpetual diff.
+
+	// Reconcile config for drift without cty-type churn: keep the prior
+	// state value (preserving the practitioner-authored representation, e.g. a
+	// jsondecode `operations` tuple) when the API-derived config is
+	// semantically equal, and only adopt the API value when it genuinely
+	// differs. On import prior state is null, so the API value populates.
+	apiConfig, err := transformConfigToMap(transform.Config)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to convert transform config", err.Error())
+		return
+	}
+	config, err := reconcileDynamic(data.Config, apiConfig)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to reconcile transform config", err.Error())
+		return
+	}
+	data.Config = config
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// transformConfigToMap converts an API transform config into a plain map for
+// semantic drift comparison in Read.
+func transformConfigToMap(in *monad.ModelsTransformConfig) (map[string]any, error) {
+	if in == nil {
+		return nil, nil
+	}
+
+	jsonB, err := json.Marshal(in)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal transform config: %w", err)
+	}
+
+	config := make(map[string]any)
+	if err := json.Unmarshal(jsonB, &config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal transform config: %w", err)
+	}
+
+	return config, nil
 }
 
 func (r *ResourceTransform) Update(

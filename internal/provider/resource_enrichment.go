@@ -19,6 +19,7 @@ import (
 var _ resource.Resource = &ResourceEnrichment{}
 var _ resource.ResourceWithConfigure = &ResourceEnrichment{}
 var _ resource.ResourceWithImportState = &ResourceEnrichment{}
+var _ resource.ResourceWithModifyPlan = &ResourceEnrichment{}
 
 func NewResourceEnrichment() resource.Resource {
 	return &ResourceEnrichment{}
@@ -99,8 +100,18 @@ func (r *ResourceEnrichment) Schema(
 						Optional:            true,
 					},
 					"secrets": schema.DynamicAttribute{
-						MarkdownDescription: "Secrets for the enrichment",
-						Optional:            true,
+						MarkdownDescription: "Secrets for the enrichment. Write-only: the " +
+							"value is sent to the Monad API but never persisted in " +
+							"Terraform state. Rotation is detected via `secrets_hash`.",
+						Optional:  true,
+						Sensitive: true,
+						WriteOnly: true,
+					},
+					"secrets_hash": schema.StringAttribute{
+						MarkdownDescription: "HMAC fingerprint of `secrets`, used to " +
+							"detect when the write-only secret values change. Managed " +
+							"by the provider.",
+						Computed: true,
 					},
 				},
 			},
@@ -156,13 +167,16 @@ func (r *ResourceEnrichment) Create(
 		return
 	}
 
-	// Only the computed `id` is taken from the response. name/description/type/
-	// config are plan-known and must be returned unchanged; config carries
-	// Dynamic settings/secrets whose planned cty type must be preserved, and
-	// secrets are write-only (the API never echoes them). Rebuilding config
-	// from the response trips "Provider produced inconsistent result after
-	// apply".
+	// Only the computed `id` is taken from the response; name/description/type/
+	// settings are plan-known and must be returned unchanged (their planned cty
+	// type must be preserved — rebuilding from the response trips "Provider
+	// produced inconsistent result after apply"). Secrets are write-only, so
+	// they are nulled in state and fingerprinted into secrets_hash.
 	data.ID = types.StringValue(*enrichment.Id)
+	if err := finalizeConnectorSecrets(ctx, r.client.OrganizationID, &data, secrets); err != nil {
+		resp.Diagnostics.AddError("Failed to fingerprint enrichment secrets", err.Error())
+		return
+	}
 
 	tflog.Trace(ctx, "created an enrichment resource")
 
@@ -209,7 +223,10 @@ func (r *ResourceEnrichment) Read(
 	data.Name = types.StringValue(*enrichment.Name)
 	data.Description = description
 	data.ComponentType = types.StringValue(*enrichment.Type)
-	// config preserved from prior state (Dynamic settings/secrets; see Create).
+	if err := refreshConnectorSettings(&data, enrichment.Config.Settings); err != nil {
+		resp.Diagnostics.AddError("Failed to refresh enrichment settings", err.Error())
+		return
+	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -226,7 +243,15 @@ func (r *ResourceEnrichment) Update(
 		return
 	}
 
-	settings, secrets, err := data.getSettingsAndSecrets()
+	// Write-only `secrets` are null in the plan; read them from the
+	// configuration, which is the only place their values are available.
+	var cfg ResourceConnectorModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	settings, secrets, err := cfg.getSettingsAndSecrets()
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to get settings and secrets", err.Error())
 		return
@@ -267,10 +292,27 @@ func (r *ResourceEnrichment) Update(
 	}
 
 	// Preserve plan-known values (see Create); data already holds
-	// id/name/description/type/config from the plan.
+	// id/name/description/type/settings from the plan. Secrets stay write-only
+	// (nulled) and secrets_hash is refreshed to match what was just sent.
+	if err := finalizeConnectorSecrets(ctx, r.client.OrganizationID, &data, secrets); err != nil {
+		resp.Diagnostics.AddError("Failed to fingerprint enrichment secrets", err.Error())
+		return
+	}
+
 	tflog.Trace(ctx, "updated an enrichment resource")
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func (r *ResourceEnrichment) ModifyPlan(
+	ctx context.Context,
+	req resource.ModifyPlanRequest,
+	resp *resource.ModifyPlanResponse,
+) {
+	if r.client == nil {
+		return
+	}
+	modifyConnectorPlanForSecrets(ctx, r.client.OrganizationID, req, resp)
 }
 
 func (r *ResourceEnrichment) Delete(

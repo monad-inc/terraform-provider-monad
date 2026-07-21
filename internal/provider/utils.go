@@ -2,13 +2,19 @@ package provider
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"reflect"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 func getResponseBody(resp *http.Response) []byte {
@@ -19,6 +25,109 @@ func getResponseBody(resp *http.Response) []byte {
 
 	body, _ := io.ReadAll(resp.Body)
 	return body
+}
+
+// hmacSHA256Hex computes an HMAC-SHA256 of value keyed by key, returned as a
+// hex string. The key is zero-padded to the recommended 32-byte minimum.
+func hmacSHA256Hex(ctx context.Context, key, value string) string {
+	keyBytes := []byte(key)
+
+	// Pad with zeros if the key is below the recommended 32 bytes.
+	if len(keyBytes) < 32 {
+		tflog.Warn(ctx, "HMAC key length is below recommended 32 bytes, padding with zeros", map[string]any{
+			"original_length": len(keyBytes),
+			"padded_length":   32,
+		})
+		padded := make([]byte, 32)
+		copy(padded, keyBytes)
+		keyBytes = padded
+	}
+
+	h := hmac.New(sha256.New, keyBytes)
+	h.Write([]byte(value))
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// secretsHashKey returns the HMAC key used to fingerprint write-only secret
+// values. It prefers MONAD_SECRETS_KEY, falling back to the organization ID.
+// Keeping the key out of state means the stored hash cannot be brute-forced
+// back to the secret without also knowing the key.
+func secretsHashKey(orgID string) string {
+	if k := os.Getenv("MONAD_SECRETS_KEY"); k != "" {
+		return k
+	}
+	return orgID
+}
+
+// computeSecretsHash returns a stable HMAC fingerprint of a write-only secrets
+// map, or "" when there are no secrets. json.Marshal sorts map keys, so the
+// encoding — and therefore the hash — is deterministic for equal maps.
+func computeSecretsHash(ctx context.Context, orgID string, secrets map[string]any) (string, error) {
+	if len(secrets) == 0 {
+		return "", nil
+	}
+	encoded, err := json.Marshal(secrets)
+	if err != nil {
+		return "", fmt.Errorf("failed to encode secrets for hashing: %w", err)
+	}
+	return hmacSHA256Hex(ctx, secretsHashKey(orgID), string(encoded)), nil
+}
+
+// dynamicsSemanticallyEqual reports whether two dynamic values carry the same
+// data regardless of their concrete cty types. A practitioner's jsondecode
+// yields tuples/objects while an API-derived value yields lists/maps; the two
+// compare unequal by cty type even when the underlying data is identical.
+// Normalizing both through a JSON round-trip collapses those representation
+// differences (and unifies numeric types to float64) before comparison.
+func dynamicsSemanticallyEqual(a, b map[string]any) bool {
+	return reflect.DeepEqual(jsonNormalize(a), jsonNormalize(b))
+}
+
+// jsonNormalize collapses a value to its canonical JSON shape: map keys sorted,
+// all numbers float64, and empty maps/slices treated as nil. It lets values
+// that carry the same data but differ in concrete type compare equal.
+func jsonNormalize(v any) any {
+	switch t := v.(type) {
+	case nil:
+		return nil
+	case map[string]any:
+		if len(t) == 0 {
+			return nil
+		}
+	case []any:
+		if len(t) == 0 {
+			return nil
+		}
+	}
+
+	encoded, err := json.Marshal(v)
+	if err != nil {
+		// Fall back to the raw value; a marshal failure here just means the
+		// comparison is stricter, never wrong.
+		return v
+	}
+	var out any
+	if err := json.Unmarshal(encoded, &out); err != nil {
+		return v
+	}
+	return out
+}
+
+// reconcileDynamic refreshes a Dynamic attribute for drift detection without
+// churning its cty type. It keeps the prior state value (preserving the
+// practitioner-authored representation) when the API-derived data is
+// semantically equal, and only adopts the API value when real drift exists.
+// On import the prior state is null, so the API value always populates.
+func reconcileDynamic(prior types.Dynamic, apiValue map[string]any) (types.Dynamic, error) {
+	priorMap, err := tfDynamicToMapAny(prior)
+	if err != nil {
+		// Prior state isn't a map/object we can normalize; adopt the API value.
+		return AnyToDynamic(apiValue)
+	}
+	if dynamicsSemanticallyEqual(priorMap, apiValue) {
+		return prior, nil
+	}
+	return AnyToDynamic(apiValue)
 }
 
 // TfDynamicToMapAny converts a types.Dynamic to map[string]any
