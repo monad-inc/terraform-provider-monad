@@ -4,4 +4,3 @@ terraform.tfstate.backup
 terraform-provider-monad
 
 .claude
-CLAUDE.md
