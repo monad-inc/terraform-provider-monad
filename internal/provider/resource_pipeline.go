@@ -377,6 +377,10 @@ func (r *ResourcePipeline) Read(
 	data.Name = types.StringValue(*pipeline.Name)
 	data.Description = description
 
+	// Refresh `enabled` so a pipeline toggled outside Terraform (e.g. in the UI)
+	// surfaces as drift in the next plan.
+	data.Enabled = reconcilePipelineEnabled(data.Enabled, pipeline.GetEnabled())
+
 	// Reconcile nodes/edges for drift without reintroducing the perpetual diffs
 	// that motivated preserving them: the API assigns node-instance ids, may
 	// generate slugs the practitioner omitted, echoes nullable edge
@@ -547,6 +551,19 @@ func sortEdgesByConfigOrder(edges []ResourcePipelineEdge, configEdges []Resource
 		}
 		return keyI < keyJ
 	})
+}
+
+// reconcilePipelineEnabled refreshes `enabled` from the API while preserving a
+// null prior value. Create/Update treat a null `enabled` as true (the pipeline
+// default), so a null prior value is semantically equal to an API `true`;
+// keeping it null avoids a perpetual diff for a practitioner who omitted the
+// attribute. Any other case — an explicit prior value, or drift away from the
+// default — takes the API value so the toggle is visible in the next plan.
+func reconcilePipelineEnabled(prior types.Bool, apiEnabled bool) types.Bool {
+	if prior.IsNull() && apiEnabled {
+		return prior
+	}
+	return types.BoolValue(apiEnabled)
 }
 
 // reconcilePipelineNodes keeps the prior state node list when it is

@@ -235,3 +235,67 @@ func TestReconcilePipelineEdgesMasksOmittedNameDescription(t *testing.T) {
 		t.Error("expected genuine edge drift to be adopted")
 	}
 }
+
+func TestReconcilePipelineEnabled(t *testing.T) {
+	cases := []struct {
+		name       string
+		prior      types.Bool
+		apiEnabled bool
+		wantNull   bool
+		wantValue  bool
+	}{
+		{
+			// Omitted `enabled` defaults to true on create; an API `true` is
+			// semantically equal, so the null is preserved (no perpetual diff).
+			name:       "null prior, api enabled -> stays null",
+			prior:      types.BoolNull(),
+			apiEnabled: true,
+			wantNull:   true,
+		},
+		{
+			// A UI toggle to disabled must surface even when the practitioner
+			// omitted `enabled`.
+			name:       "null prior, api disabled -> drift",
+			prior:      types.BoolNull(),
+			apiEnabled: false,
+			wantValue:  false,
+		},
+		{
+			name:       "explicit true, api still true -> true",
+			prior:      types.BoolValue(true),
+			apiEnabled: true,
+			wantValue:  true,
+		},
+		{
+			// Explicit true, UI disabled it -> drift adopted.
+			name:       "explicit true, api disabled -> drift",
+			prior:      types.BoolValue(true),
+			apiEnabled: false,
+			wantValue:  false,
+		},
+		{
+			name:       "explicit false, api enabled -> drift",
+			prior:      types.BoolValue(false),
+			apiEnabled: true,
+			wantValue:  true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := reconcilePipelineEnabled(tc.prior, tc.apiEnabled)
+			if tc.wantNull {
+				if !got.IsNull() {
+					t.Errorf("expected null, got %v", got)
+				}
+				return
+			}
+			if got.IsNull() {
+				t.Fatalf("expected %v, got null", tc.wantValue)
+			}
+			if got.ValueBool() != tc.wantValue {
+				t.Errorf("expected %v, got %v", tc.wantValue, got.ValueBool())
+			}
+		})
+	}
+}

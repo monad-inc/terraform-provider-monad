@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -188,16 +189,37 @@ func modifyConnectorPlanForSecrets(ctx context.Context, orgID string, req resour
 
 	secrets, err := tfDynamicToMapAny(secretsDyn)
 	if err != nil {
+		// A malformed secrets value must not silently disable rotation
+		// detection — surface it so the practitioner can fix the value.
+		resp.Diagnostics.AddAttributeWarning(
+			secretsPath,
+			"Secret rotation detection skipped",
+			fmt.Sprintf(
+				"Could not read the configured secrets to detect a rotation: %s. "+
+					"A change to `config.secrets` may not trigger an update until this is resolved.",
+				err,
+			),
+		)
 		return
 	}
 
 	newHash, err := computeSecretsHash(ctx, orgID, secrets)
 	if err != nil {
+		resp.Diagnostics.AddAttributeWarning(
+			secretsPath,
+			"Secret rotation detection skipped",
+			fmt.Sprintf(
+				"Could not hash the configured secrets to detect a rotation: %s. "+
+					"A change to `config.secrets` may not trigger an update until this is resolved.",
+				err,
+			),
+		)
 		return
 	}
 
 	var stateHash types.String
 	if diags := req.State.GetAttribute(ctx, hashPath, &stateHash); diags.HasError() {
+		resp.Diagnostics.Append(diags...)
 		return
 	}
 
@@ -207,6 +229,6 @@ func modifyConnectorPlanForSecrets(ctx context.Context, orgID string, req resour
 	}
 
 	if newHash != current {
-		resp.Plan.SetAttribute(ctx, hashPath, types.StringUnknown())
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, hashPath, types.StringUnknown())...)
 	}
 }
