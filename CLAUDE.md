@@ -225,14 +225,46 @@ written resource tables in sync too (they drifted before PR #7).
 ## Changelog & versioning
 
 - The provider is **pre-1.0**; **breaking changes ship as minor bumps** (per
-  `CHANGELOG.md`). The write-only-secrets change was breaking → recommended
+  `CHANGELOG.md`) — e.g. the breaking write-only-secrets change shipped in
   `0.2.0`.
-- Update `CHANGELOG.md` (`## Unreleased`, with Fixed / Added / Changed
-  (BREAKING) / Known issues) for any user-visible change, and document a
-  **migration** path for breaking ones. The framework auto-nullifies write-only
-  attributes on every Read/plan, so old state carrying secret refs drops
-  gracefully — no state upgrader was needed, but it is still a state break and
-  must be called out.
+- Land user-visible changes under a `## Unreleased` section (Fixed / Added /
+  Changed (BREAKING) / Known issues) and document a **migration** path for
+  breaking ones. (The write-only-secrets break needed no state upgrader — the
+  framework auto-nullifies write-only attributes on every Read/plan, so old
+  state carrying secret refs drops gracefully — but it is still a state break
+  and had to be called out.)
+- **When you cut a release, promote `## Unreleased` to the version heading**
+  (`## X.Y.Z`), in that PR or a preceding one, so the changelog and the tag
+  agree. See Releasing.
+
+## Releasing
+
+Releases are automated by **GoReleaser**, triggered by pushing a **`vX.Y.Z`**
+git tag (`.github/workflows/release.yml`). The job cross-compiles every
+platform, writes `*_SHA256SUMS`, **GPG-signs** the checksums, publishes a GitHub
+Release (the zips + `terraform-registry-manifest.json`), and the Terraform
+Registry then auto-ingests the new tag.
+
+- **A merge to `main` is NOT a release.** Until a `vX.Y.Z` tag is pushed and the
+  workflow runs, the registry still serves the previous version and consumers'
+  `.terraform.lock.hcl` stays pinned to it. To exercise an unreleased fix, build
+  from `main` and use `dev_overrides` (see the live-check recipe) — don't expect
+  `terraform init` to pick it up.
+- **Cut a release:** from an up-to-date `main`,
+  `git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`. Version per SemVer
+  (pre-1.0: breaking = minor bump). Promote the CHANGELOG heading first.
+- **Requires** the `GPG_PRIVATE_KEY` + `PASSPHRASE` Actions secrets (public key
+  registered on the registry publisher account); `GITHUB_TOKEN` is automatic.
+  The tag MUST match `v*` or the workflow never fires.
+- **Keep `.goreleaser.yml` clean:** run `goreleaser check` before releasing —
+  deprecations make it exit non-zero and a future GoReleaser bump will hard-fail
+  the release. Archives use the list form `formats: [zip]`, not the deprecated
+  scalar `format:`. Dry-run without publishing or GPG via
+  `goreleaser release --snapshot --clean --skip=sign` and inspect `dist/`
+  (release zips contain only `LICENSE`, `README.md`, and the binary — GoReleaser's
+  default file set — so root docs like this file are never shipped).
+- **If a release run fails partway**, delete the tag locally and remotely
+  (`git push origin :refs/tags/vX.Y.Z`), fix the cause, and re-push.
 
 ## Commits & PRs
 
