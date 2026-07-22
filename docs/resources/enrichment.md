@@ -22,6 +22,8 @@ Monad Enrichment
 
 ### Optional
 
+> **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
+
 - `config` (Block, Optional) Enrichment configuration (see [below for nested schema](#nestedblock--config))
 - `description` (String) Description of the enrichment
 
@@ -34,5 +36,11 @@ Monad Enrichment
 
 Optional:
 
-- `secrets` (Dynamic) Secrets for the enrichment
+> **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
+
+- `secrets` (Dynamic, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Secrets for the enrichment. Write-only: the value is sent to the Monad API but never persisted in Terraform state. Rotation is detected via `secrets_hash`.
 - `settings` (Dynamic) Settings for the enrichment
+
+Read-Only:
+
+- `secrets_hash` (String) HMAC fingerprint of `secrets`, used to detect when the write-only secret values change. Managed by the provider.

@@ -118,8 +118,9 @@ provider "monad" {
 Manages organization secrets that can be referenced by other resources.
 
 - `name` (string, required) - Name of the secret
-- `value` (string, required, sensitive) - Secret value
-- `reference` (string, computed) - Reference string to use in other resources
+- `description` (string, optional) - Description of the secret
+- `value` (string, required, sensitive, write-only) - Secret value. Write-only: sent to the Monad API but never stored in Terraform state.
+- `value_hash` (string, computed) - HMAC fingerprint of `value`, used to detect changes.
 
 ### monad_pipeline
 
@@ -127,8 +128,9 @@ Manages data pipelines that connect inputs to outputs with conditional logic.
 
 - `name` (string, required) - Name of the pipeline
 - `description` (string, optional) - Description of the pipeline
-- `nodes` (list, required) - Pipeline nodes configuration
-- `edges` (list, required) - Pipeline edge connections
+- `enabled` (bool, optional) - Whether the pipeline is enabled (defaults to true)
+- `nodes` (block list) - Pipeline nodes configuration
+- `edges` (block list) - Pipeline edge connections
 
 ### monad_input
 
@@ -136,8 +138,11 @@ Generic input connector for data sources.
 
 - `name` (string, required) - Name of the input
 - `description` (string, optional) - Description of the input
-- `type` (string, required) - Type of input connector (e.g., "demo", "okta_systemlog")
+- `type` (string, required) - Type of input connector (e.g., "demo", "okta-systemlog")
 - `config` (block, optional) - Input configuration
+  - `settings` (dynamic, optional) - Connector settings
+  - `secrets` (dynamic, optional, sensitive, write-only) - Connector secrets; sent to the API but never stored in state. Supply a new secret `{ value, name, description }` or a reference `{ id }`.
+  - `secrets_hash` (string, computed) - HMAC fingerprint of `secrets`, used to detect rotation.
 
 ### monad_output
 
@@ -145,14 +150,28 @@ Generic output connector for data destinations.
 
 - `name` (string, required) - Name of the output
 - `description` (string, optional) - Description of the output
-- `type` (string, required) - Type of output connector (e.g., "http", "postgresql")
+- `type` (string, required) - Type of output connector (e.g., "dev-null", "http")
 - `config` (block, optional) - Output configuration
+  - `settings` (dynamic, optional) - Connector settings
+  - `secrets` (dynamic, optional, sensitive, write-only) - Connector secrets; sent to the API but never stored in state. Supply a new secret `{ value, name, description }` or a reference `{ id }`.
+  - `secrets_hash` (string, computed) - HMAC fingerprint of `secrets`, used to detect rotation.
 
 ### monad_transform
 
-Generic transform connector for data transformations.
+Generic transform for data transformations.
 
 - `name` (string, required) - Name of the transform
 - `description` (string, optional) - Description of the transform
-- `type` (string, required) - Type of transform connector
-- `config` (block, optional) - Transform configuration
+- `config` (dynamic, required) - Transform configuration (e.g. `jsondecode(...)` of an `operations` array)
+
+### monad_enrichment
+
+Generic enrichment connector for data enrichment.
+
+- `name` (string, required) - Name of the enrichment
+- `description` (string, optional) - Description of the enrichment
+- `type` (string, required) - Type of enrichment connector
+- `config` (block, optional) - Enrichment configuration
+  - `settings` (dynamic, optional) - Connector settings
+  - `secrets` (dynamic, optional, sensitive, write-only) - Connector secrets; sent to the API but never stored in state. Supply a new secret `{ value, name, description }` or a reference `{ id }`.
+  - `secrets_hash` (string, computed) - HMAC fingerprint of `secrets`, used to detect rotation.

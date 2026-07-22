@@ -16,6 +16,7 @@ import (
 var _ resource.Resource = &ResourceInput{}
 var _ resource.ResourceWithConfigure = &ResourceInput{}
 var _ resource.ResourceWithImportState = &ResourceInput{}
+var _ resource.ResourceWithModifyPlan = &ResourceInput{}
 
 func NewResourceInput() resource.Resource {
 	return &ResourceInput{}
@@ -113,25 +114,16 @@ func (r *ResourceInput) Create(
 		return
 	}
 
-	config, err := connectorConfigToTF(input.Config.Settings, input.Config.Secrets)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert input config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
+	// Only the computed `id` is taken from the response; name/description/type/
+	// settings are plan-known and must be returned unchanged (their planned cty
+	// type must be preserved — rebuilding from the response trips "Provider
+	// produced inconsistent result after apply"). Secrets are write-only, so
+	// they are nulled in state and fingerprinted into secrets_hash.
+	data.ID = types.StringValue(*input.Id)
+	if err := finalizeConnectorSecrets(ctx, r.client.OrganizationID, &data, secrets); err != nil {
+		resp.Diagnostics.AddError("Failed to fingerprint input secrets", err.Error())
 		return
 	}
-
-	description := types.StringNull()
-	if input.Description != nil && *input.Description != "" {
-		description = types.StringValue(*input.Description)
-	}
-
-	data.ID = types.StringValue(*input.Id)
-	data.Name = types.StringValue(*input.Name)
-	data.Description = description
-	data.ComponentType = types.StringValue(*input.Type)
-	data.Config = config
 
 	tflog.Trace(ctx, "created an input resource")
 
@@ -169,15 +161,6 @@ func (r *ResourceInput) Read(
 		return
 	}
 
-	config, err := connectorConfigToTF(input.Config.Settings, input.Config.Secrets)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert input config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
 	description := types.StringNull()
 	if input.Description != nil && *input.Description != "" {
 		description = types.StringValue(*input.Description)
@@ -187,7 +170,10 @@ func (r *ResourceInput) Read(
 	data.Name = types.StringValue(*input.Name)
 	data.Description = description
 	data.ComponentType = types.StringValue(*input.Type)
-	data.Config = config
+	if err := refreshConnectorSettings(&data, input.Config.Settings); err != nil {
+		resp.Diagnostics.AddError("Failed to refresh input settings", err.Error())
+		return
+	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -204,7 +190,15 @@ func (r *ResourceInput) Update(
 		return
 	}
 
-	settings, secrets, err := data.getSettingsAndSecrets()
+	// Write-only `secrets` are null in the plan; read them from the
+	// configuration, which is the only place their values are available.
+	var cfg ResourceConnectorModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	settings, secrets, err := cfg.getSettingsAndSecrets()
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to get settings and secrets", err.Error())
 		return
@@ -224,7 +218,7 @@ func (r *ResourceInput) Update(
 		},
 	}
 
-	input, monadResp, err := r.client.OrganizationInputsAPI.
+	_, monadResp, err := r.client.OrganizationInputsAPI.
 		V2OrganizationIdInputsInputIdPut(
 			ctx,
 			r.client.OrganizationID,
@@ -244,24 +238,28 @@ func (r *ResourceInput) Update(
 		return
 	}
 
-	config, err := connectorConfigToTF(input.Config.Settings, input.Config.Secrets)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert input config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
+	// Preserve plan-known values (see Create); data already holds
+	// id/name/description/type/settings from the plan. Secrets stay write-only
+	// (nulled) and secrets_hash is refreshed to match what was just sent.
+	if err := finalizeConnectorSecrets(ctx, r.client.OrganizationID, &data, secrets); err != nil {
+		resp.Diagnostics.AddError("Failed to fingerprint input secrets", err.Error())
 		return
 	}
-
-	data.ID = types.StringValue(*input.Id)
-	data.Name = types.StringValue(*input.Name)
-	data.Description = types.StringValue(*input.Description)
-	data.ComponentType = types.StringValue(*input.Type)
-	data.Config = config
 
 	tflog.Trace(ctx, "updated an input resource")
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func (r *ResourceInput) ModifyPlan(
+	ctx context.Context,
+	req resource.ModifyPlanRequest,
+	resp *resource.ModifyPlanResponse,
+) {
+	if r.client == nil {
+		return
+	}
+	modifyConnectorPlanForSecrets(ctx, r.client.OrganizationID, req, resp)
 }
 
 func (r *ResourceInput) Delete(

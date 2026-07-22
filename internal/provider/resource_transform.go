@@ -146,33 +146,14 @@ func (r *ResourceTransform) Create(
 		return
 	}
 
-	description := types.StringNull()
-	if transform.Description != nil && *transform.Description != "" {
-		description = types.StringValue(*transform.Description)
-	}
-
-	config, err := transformConfigToMap(transform.Config)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert transform config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
-	tfConfig, err := AnyToDynamic(config)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert transform config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
+	// Only the computed `id` is taken from the API response. name, description,
+	// and config are plan-known values, so Terraform's apply-consistency rule
+	// requires them to be returned unchanged (they are already in `data` from
+	// the plan). In particular `config` is a Dynamic attribute whose planned
+	// value (e.g. jsondecode with an `operations` tuple) must be preserved
+	// verbatim — rebuilding it from the API response yields a different cty
+	// type and trips "Provider produced inconsistent result after apply".
 	data.ID = types.StringValue(*transform.Id)
-	data.Name = types.StringValue(*transform.Name)
-	data.Description = description
-	data.Config = tfConfig
 
 	tflog.Trace(ctx, "created a transform resource")
 
@@ -215,30 +196,48 @@ func (r *ResourceTransform) Read(
 		description = types.StringValue(*transform.Description)
 	}
 
-	config, err := transformConfigToMap(transform.Config)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert transform config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
-	tfConfig, err := AnyToDynamic(config)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert transform config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
 	data.ID = types.StringValue(*transform.Id)
 	data.Name = types.StringValue(*transform.Name)
 	data.Description = description
-	data.Config = tfConfig
+
+	// Reconcile config for drift without cty-type churn: keep the prior
+	// state value (preserving the practitioner-authored representation, e.g. a
+	// jsondecode `operations` tuple) when the API-derived config is
+	// semantically equal, and only adopt the API value when it genuinely
+	// differs. On import prior state is null, so the API value populates.
+	apiConfig, err := transformConfigToMap(transform.Config)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to convert transform config", err.Error())
+		return
+	}
+	config, err := reconcileDynamic(data.Config, apiConfig)
+	if err != nil {
+		resp.Diagnostics.AddError("Failed to reconcile transform config", err.Error())
+		return
+	}
+	data.Config = config
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// transformConfigToMap converts an API transform config into a plain map for
+// semantic drift comparison in Read.
+func transformConfigToMap(in *monad.ModelsTransformConfig) (map[string]any, error) {
+	if in == nil {
+		return nil, nil
+	}
+
+	jsonB, err := json.Marshal(in)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal transform config: %w", err)
+	}
+
+	config := make(map[string]any)
+	if err := json.Unmarshal(jsonB, &config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal transform config: %w", err)
+	}
+
+	return config, nil
 }
 
 func (r *ResourceTransform) Update(
@@ -267,7 +266,7 @@ func (r *ResourceTransform) Update(
 		Config:      transformConfig,
 	}
 
-	transform, monadResp, err := r.client.OrganizationTransformsAPI.
+	_, monadResp, err := r.client.OrganizationTransformsAPI.
 		V1OrganizationIdTransformsTransformIdPatch(
 			ctx,
 			r.client.OrganizationID,
@@ -286,55 +285,12 @@ func (r *ResourceTransform) Update(
 		return
 	}
 
-	description := types.StringNull()
-	if transform.Description != nil && *transform.Description != "" {
-		description = types.StringValue(*transform.Description)
-	}
-
-	config, err := transformConfigToMap(transform.Config)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert transform config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
-	tfConfig, err := AnyToDynamic(config)
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Failed to convert transform config",
-			fmt.Sprintf("Error converting config: %s", err),
-		)
-		return
-	}
-
-	data.ID = types.StringValue(*transform.Id)
-	data.Name = types.StringValue(*transform.Name)
-	data.Description = description
-	data.Config = tfConfig
-
+	// Preserve plan-known values (see Create): `data` already holds
+	// id/name/description/config from the plan, so nothing is copied back from
+	// the API response.
 	tflog.Trace(ctx, "updated a transform resource")
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-}
-
-func transformConfigToMap(in *monad.ModelsTransformConfig) (map[string]any, error) {
-	if in == nil {
-		return nil, nil
-	}
-
-	jsonB, err := json.Marshal(in)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal transform config: %w", err)
-	}
-
-	config := make(map[string]any)
-	if err := json.Unmarshal(jsonB, &config); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal transform config: %w", err)
-	}
-
-	return config, nil
 }
 
 func (r *ResourceTransform) Delete(

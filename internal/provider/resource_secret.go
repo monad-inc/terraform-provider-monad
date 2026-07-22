@@ -2,11 +2,7 @@ package provider
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"os"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -111,28 +107,7 @@ func (r *ResourceSecret) Schema(
 }
 
 func (r *ResourceSecret) computeValueHash(ctx context.Context, value string) string {
-	key := os.Getenv("MONAD_SECRETS_KEY")
-	if key == "" {
-		key = r.client.OrganizationID
-	}
-
-	keyBytes := []byte(key)
-
-	// Pad with zeros if key is below recommended 32 bytes
-	if len(keyBytes) < 32 {
-		tflog.Warn(ctx, "HMAC key length is below recommended 32 bytes, padding with zeros", map[string]any{
-			"original_length": len(keyBytes),
-			"padded_length":   32,
-			"source":          map[bool]string{true: "MONAD_SECRETS_KEY", false: "OrganizationID"}[os.Getenv("MONAD_SECRETS_KEY") != ""],
-		})
-		padded := make([]byte, 32)
-		copy(padded, keyBytes)
-		keyBytes = padded
-	}
-
-	h := hmac.New(sha256.New, keyBytes)
-	h.Write([]byte(value))
-	return hex.EncodeToString(h.Sum(nil))
+	return hmacSHA256Hex(ctx, secretsHashKey(r.client.OrganizationID), value)
 }
 
 func (r *ResourceSecret) Create(
