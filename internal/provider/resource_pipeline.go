@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -128,11 +129,26 @@ func (r *ResourcePipeline) Schema(
 			"enabled": schema.BoolAttribute{
 				MarkdownDescription: "Whether the pipeline is enabled",
 				Optional:            true,
+				// Computed so the server's value populates on import (and when
+				// the practitioner omits it), giving a clean first plan instead
+				// of a spurious `enabled` change (ENG-9221). UseStateForUnknown
+				// keeps an omitted value stable across plans rather than
+				// re-reading it as unknown.
+				Computed: true,
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 		Blocks: map[string]schema.Block{
 			"nodes": schema.ListNestedBlock{
 				MarkdownDescription: "List of nodes in the pipeline",
+				// Node order is not semantically meaningful; suppress a plan
+				// diff that only reorders an unchanged node set — most notably
+				// the first plan after `terraform import` (ENG-9221).
+				PlanModifiers: []planmodifier.List{
+					pipelineNodesOrderInsensitive{},
+				},
 				NestedObject: schema.NestedBlockObject{
 					Attributes: map[string]schema.Attribute{
 						"component_type": schema.StringAttribute{
@@ -152,6 +168,12 @@ func (r *ResourcePipeline) Schema(
 			},
 			"edges": schema.ListNestedBlock{
 				MarkdownDescription: "List of edges in the pipeline",
+				// Edge order is not semantically meaningful; suppress a plan
+				// diff that only reorders an unchanged edge set — most notably
+				// the first plan after `terraform import` (ENG-9221).
+				PlanModifiers: []planmodifier.List{
+					pipelineEdgesOrderInsensitive{},
+				},
 				NestedObject: schema.NestedBlockObject{
 					Attributes: map[string]schema.Attribute{
 						"name": schema.StringAttribute{
@@ -331,6 +353,9 @@ func (r *ResourcePipeline) Create(
 	// "Provider produced inconsistent result after apply" and cause perpetual
 	// diffs.
 	data.ID = types.StringValue(*pipeline.Id)
+	// `enabled` is Optional+Computed; resolve any unknown (omitted config) to
+	// the value actually sent so state is known and consistent.
+	data.Enabled = types.BoolValue(enabled)
 
 	tflog.Trace(ctx, "created a pipeline resource")
 
@@ -379,7 +404,11 @@ func (r *ResourcePipeline) Read(
 
 	// Refresh `enabled` so a pipeline toggled outside Terraform (e.g. in the UI)
 	// surfaces as drift in the next plan.
-	data.Enabled = reconcilePipelineEnabled(data.Enabled, pipeline.GetEnabled())
+	// `enabled` is Computed and reflects the true server value; setting it
+	// directly surfaces a UI-side toggle as drift and gives a clean plan on
+	// import (ENG-9221). An omitted-config value stays stable via
+	// UseStateForUnknown, so this no longer churns.
+	data.Enabled = types.BoolValue(pipeline.GetEnabled())
 
 	// Reconcile nodes/edges for drift without reintroducing the perpetual diffs
 	// that motivated preserving them: the API assigns node-instance ids, may
@@ -553,19 +582,6 @@ func sortEdgesByConfigOrder(edges []ResourcePipelineEdge, configEdges []Resource
 	})
 }
 
-// reconcilePipelineEnabled refreshes `enabled` from the API while preserving a
-// null prior value. Create/Update treat a null `enabled` as true (the pipeline
-// default), so a null prior value is semantically equal to an API `true`;
-// keeping it null avoids a perpetual diff for a practitioner who omitted the
-// attribute. Any other case — an explicit prior value, or drift away from the
-// default — takes the API value so the toggle is visible in the next plan.
-func reconcilePipelineEnabled(prior types.Bool, apiEnabled bool) types.Bool {
-	if prior.IsNull() && apiEnabled {
-		return prior
-	}
-	return types.BoolValue(apiEnabled)
-}
-
 // reconcilePipelineNodes keeps the prior state node list when it is
 // semantically equal to the API-derived list, so genuine drift surfaces while
 // the practitioner-authored representation (including omitted, server-generated
@@ -734,6 +750,7 @@ func (r *ResourcePipeline) Update(
 	// Preserve plan-known values (see Create); only the computed `id` is taken
 	// from the response.
 	data.ID = types.StringValue(*pipeline.Id)
+	data.Enabled = types.BoolValue(enabled)
 
 	tflog.Trace(ctx, "updated a pipeline resource")
 
