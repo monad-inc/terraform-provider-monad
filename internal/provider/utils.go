@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -25,6 +26,27 @@ func getResponseBody(resp *http.Response) []byte {
 
 	body, _ := io.ReadAll(resp.Body)
 	return body
+}
+
+// isNotFoundResponse reports whether an errored API response indicates the
+// resource no longer exists remotely. It is consulted only on a read error
+// path, so any status seen here already represents a failed lookup.
+//
+// The Monad API currently returns HTTP 500 with the body
+// {"code":500,"error":"An item of this type does not exist."} for a missing
+// resource instead of a 404 (ENG-9258). We treat a 404/410 *or* that specific
+// sentinel as not-found, so a resource deleted outside Terraform is dropped
+// from state and recreated on the next plan rather than wedging plan/apply on
+// refresh (ENG-9259). Once ENG-9258 ships the 404, the sentinel branch becomes
+// redundant and can be removed.
+func isNotFoundResponse(resp *http.Response, body []byte) bool {
+	if resp != nil {
+		switch resp.StatusCode {
+		case http.StatusNotFound, http.StatusGone:
+			return true
+		}
+	}
+	return bytes.Contains(body, []byte("An item of this type does not exist"))
 }
 
 // hmacSHA256Hex computes an HMAC-SHA256 of value keyed by key, returned as a
