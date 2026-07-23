@@ -4,9 +4,9 @@ All notable changes to this provider are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/). While the provider is pre-1.0,
 breaking changes are released as minor version bumps.
 
-## Unreleased
+## 0.2.0
 
-Recommended release: **0.2.0** (contains a breaking change — see below).
+Contains a breaking change (write-only `config.secrets`) — see below.
 
 ### Fixed
 
