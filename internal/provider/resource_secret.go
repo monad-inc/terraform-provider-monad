@@ -172,12 +172,19 @@ func (r *ResourceSecret) Read(
 		).
 		Execute()
 	if err != nil {
+		body := getResponseBody(monadResp)
+		if isNotFoundResponse(monadResp, body) {
+			// Deleted outside Terraform — drop from state so the next plan
+			// recreates it instead of erroring on refresh (ENG-9259).
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError(
 			"Client Error",
 			fmt.Sprintf(
 				"Unable to read secret, got error: %s. Response: %s",
 				err,
-				getResponseBody(monadResp),
+				body,
 			),
 		)
 		return
