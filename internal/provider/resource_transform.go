@@ -96,6 +96,13 @@ func (r *ResourceTransform) Schema(
 			"config": schema.DynamicAttribute{
 				MarkdownDescription: "Transform configuration",
 				Required:            true,
+				// Keep prior state when the config is semantically equal, so the
+				// first plan after `terraform import` is clean instead of
+				// re-adding empty-string operation fields the API drops
+				// (ENG-9263).
+				PlanModifiers: []planmodifier.Dynamic{
+					dynamicConfigSemanticEqual{},
+				},
 			},
 		},
 	}
