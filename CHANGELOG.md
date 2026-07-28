@@ -4,6 +4,54 @@ All notable changes to this provider are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/). While the provider is pre-1.0,
 breaking changes are released as minor version bumps.
 
+## 0.3.0
+
+No breaking changes. Resolves the `monad_pipeline` import issue listed under
+0.2.0's known issues, and makes the provider recover on its own from resources
+deleted outside Terraform.
+
+### Fixed
+
+- **Out-of-band deletion no longer wedges `plan`/`apply`.** Every resource's
+  `Read` (`monad_pipeline`, `monad_input`, `monad_output`, `monad_transform`,
+  `monad_enrichment`, `monad_secret`) previously treated a failed lookup as a
+  fatal `Client Error`, so a resource deleted outside Terraform left the
+  configuration permanently stuck on refresh until a manual
+  `terraform state rm`. Read now drops the resource from state when the API
+  reports it is gone, and the next plan recreates it. (ENG-9259)
+
+  Not-found is detected from either a real `404`/`410` **or** the legacy
+  Monad API response of `500` with the body
+  `An item of this type does not exist.` Both are accepted, so self-heal works
+  against instances that predate the API's 404 fix as well as current ones.
+  (ENG-9258)
+- **`monad_pipeline` import: clean first plan.** After `terraform import`, the
+  first `plan` no longer reports a spurious change from reordered `nodes`/
+  `edges` or from `enabled`. Read cannot see the practitioner's HCL on import,
+  so it could not reconstruct the authored ordering. `nodes` and `edges` now
+  use order-insensitive plan modifiers that keep the prior state when the
+  configured set matches in a different order — a genuine add, remove or edit
+  still diffs. (ENG-9221)
+- **`monad_transform` import: clean first plan.** After `terraform import`, the
+  first `plan` no longer adds `+ description = ""` to every operation in the
+  Dynamic `config`. The API omits empty-string operation fields that the HCL
+  carries explicitly, and Read adopted the API value verbatim when prior state
+  was null. The `config` attribute now keeps the state value when it is
+  semantically equal to the configuration, using the same `pruneEmpty`-based
+  comparison Read already applies. (ENG-9263)
+
+### Changed
+
+- **`monad_pipeline.enabled` is now `Optional + Computed`** (with
+  `UseStateForUnknown`) and is populated from the API in Create, Update and
+  Read. This replaces the previous null-preservation reconcile, which could not
+  cover import because prior state is null there.
+
+  No configuration change is required. The practical difference is that when
+  `enabled` is omitted from the configuration the provider now adopts the
+  server's value instead of treating the attribute as unset — which is what
+  makes an imported, otherwise-unchanged pipeline plan clean.
+
 ## 0.2.0
 
 Contains a breaking change (write-only `config.secrets`) — see below.
