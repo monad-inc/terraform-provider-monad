@@ -382,7 +382,7 @@ func TestAnyToDynamic(t *testing.T) {
 				var uint64Val interface{} = uint64(500)
 				var float32Val interface{} = float32(3.14)
 				var float64Val interface{} = float64(2.718)
-				
+
 				return map[string]any{
 					"string_interface":  stringVal,
 					"bool_interface":    boolVal,
@@ -402,8 +402,8 @@ func TestAnyToDynamic(t *testing.T) {
 			}(),
 		},
 		{
-			name:    "unsupported type error",
-			input:   map[string]any{
+			name: "unsupported type error",
+			input: map[string]any{
 				"unsupported": func() {}, // function type should trigger error
 			},
 			wantErr: true,
@@ -416,7 +416,7 @@ func TestAnyToDynamic(t *testing.T) {
 				var reflectString interface{} = "reflect string"
 				var reflectBool interface{} = false
 				var reflectFloat32 interface{} = float32(1.23)
-				
+
 				return map[string]any{
 					"reflect_string":  reflectString,
 					"reflect_bool":    reflectBool,
@@ -448,7 +448,7 @@ func TestAnyToDynamic(t *testing.T) {
 			// Convert back to verify roundtrip works
 			converted, err := TfDynamicToMapAny(result)
 			require.NoError(t, err)
-			
+
 			// For non-null cases, verify we can convert back
 			if !tt.wantNull {
 				assert.NotNil(t, converted)
@@ -525,7 +525,7 @@ func TestAnyToDynamic_RoundTrip(t *testing.T) {
 
 func TestTfValueToAny(t *testing.T) {
 	ctx := context.Background()
-	
+
 	tests := []struct {
 		name        string
 		input       attr.Value
@@ -801,7 +801,7 @@ func TestTfValueToAny(t *testing.T) {
 func TestAnyToAttrValue_ReflectionPaths(t *testing.T) {
 	// These tests specifically target the reflection code paths in anyToAttrValue
 	// by using values that will bypass the direct type switch cases
-	
+
 	tests := []struct {
 		name     string
 		input    any
@@ -834,7 +834,7 @@ func TestAnyToAttrValue_ReflectionPaths(t *testing.T) {
 			expected: int64(42),
 		},
 		{
-			name: "reflect.Int16 path", 
+			name: "reflect.Int16 path",
 			input: func() any {
 				var val interface{} = int16(1000)
 				return struct{ V interface{} }{V: val}.V
@@ -883,20 +883,20 @@ func TestAnyToAttrValue_ReflectionPaths(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, attrType, err := anyToAttrValue(tt.input)
-			
+
 			if tt.wantErr {
 				require.Error(t, err)
 				return
 			}
-			
+
 			require.NoError(t, err)
 			require.NotNil(t, result)
 			require.NotNil(t, attrType)
-			
+
 			// Convert back to check the value
 			switch v := result.(type) {
 			case types.String:
@@ -920,7 +920,7 @@ func TestAnyToAttrValue_ReflectionPaths(t *testing.T) {
 func TestAnyToAttrValue_ForceReflectionPaths(t *testing.T) {
 	// This test uses JSON unmarshaling to force truly generic interface{} values
 	// that will bypass the type switch and use reflection
-	
+
 	jsonStr := `{
 		"string": "test",
 		"bool": true,
@@ -931,11 +931,11 @@ func TestAnyToAttrValue_ForceReflectionPaths(t *testing.T) {
 		"uint32": 4294967295,
 		"float32": 3.14
 	}`
-	
+
 	var data map[string]interface{}
 	err := json.Unmarshal([]byte(jsonStr), &data)
 	require.NoError(t, err)
-	
+
 	// These values from JSON unmarshaling should trigger reflection paths
 	tests := []struct {
 		name string
@@ -950,7 +950,7 @@ func TestAnyToAttrValue_ForceReflectionPaths(t *testing.T) {
 		{"json uint32", "uint32"},
 		{"json float32", "float32"},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, attrType, err := anyToAttrValue(data[tt.key])
@@ -963,7 +963,7 @@ func TestAnyToAttrValue_ForceReflectionPaths(t *testing.T) {
 
 func TestAnyToAttrValue_ErrorCases(t *testing.T) {
 	// Test cases that should trigger error paths in anyToAttrValue
-	
+
 	tests := []struct {
 		name    string
 		input   any
@@ -986,7 +986,7 @@ func TestAnyToAttrValue_ErrorCases(t *testing.T) {
 			wantErr: true,
 		},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, err := anyToAttrValue(tt.input)
