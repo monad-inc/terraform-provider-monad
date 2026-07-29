@@ -3,12 +3,12 @@
 page_title: "monad_transform Resource - monad"
 subcategory: ""
 description: |-
-  Monad Secret
+  Monad Transform
 ---
 
 # monad_transform (Resource)
 
-Monad Secret
+Monad Transform
 
 
 
