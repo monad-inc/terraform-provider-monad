@@ -308,3 +308,9 @@ Registry then auto-ingests the new tag.
 - [ ] `go build` / `go vet` / `go test ./internal/...` / `gofmt -l` all clean.
 - [ ] Docs regenerated (`task generate`) if the schema changed; README/CHANGELOG updated.
 - [ ] Live-verified with `dev_overrides`: apply → no-op plan → drift detected → import clean → destroy clean.
+
+<!--
+  Symbols named above that no longer exist in the code, deliberately, because
+  the prose is telling you they were removed. Verified by scripts/check-doc-symbols.sh.
+-->
+<!-- doc-symbols:ignore connectorConfigToTF reconcilePipelineEnabled -->
