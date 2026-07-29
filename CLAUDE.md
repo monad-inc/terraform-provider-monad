@@ -67,9 +67,14 @@ Same data, different cty type → apply-consistency violation:
   That includes `config`/`settings` (Dynamic), pipeline `nodes`/`edges`,
   `name`, `description`, `type`. Rebuilding changes cty type and/or drops
   write-only values the API never echoes.
-- Never call the old `connectorConfigToTF` / `transformConfigToMap` style
-  helpers to repopulate state from a response. They were deleted in PR #7 for
-  exactly this reason — do not reintroduce them.
+- Never call an old-style helper like `connectorConfigToTF` that converts an API
+  response and **assigns it straight to state**. That one was deleted in PR #7 for
+  exactly this reason — do not reintroduce it or anything shaped like it.
+- Converting a response for **comparison** is fine and is the sanctioned pattern:
+  `transformConfigToMap` (`resource_transform.go`) turns the API config into a
+  plain map that is then handed to `reconcileDynamic`, which keeps the prior state
+  value when the two are semantically equal. Note what makes it safe — state is set
+  from the *reconciler's* result, never from the converted response directly.
 
 ### ALWAYS, in Create/Update
 
@@ -96,7 +101,7 @@ overwriting.**
   works.
 - Use the existing helpers, don't roll your own:
   - `reconcileDynamic` for Dynamic `settings`/`config`.
-  - `reconcilePipelineNodes` / `reconcilePipelineEdges` / `reconcilePipelineEnabled`.
+  - `reconcilePipelineNodes` / `reconcilePipelineEdges`.
   - `dynamicsSemanticallyEqual`, `jsonNormalize`, `pruneEmpty` underneath.
 
 ### Server-populated / non-round-trippable fields must be masked
@@ -124,11 +129,20 @@ changes. `pruneEmpty` prunes slice elements in place but never drops them
 ### null-implies-a-default equivalence
 
 If a null attribute implies a create-time default, preserve null when the API
-reports that default, or you get a perpetual diff. Concrete case:
-`monad_pipeline.enabled` is Optional with no default; Create/Update treat null
-as `true`. So `reconcilePipelineEnabled` keeps a null prior when the API returns
-`true`, and only adopts the API value otherwise (an explicit value, or drift
-away from the default such as a UI-side disable).
+reports that default, or you get a perpetual diff.
+
+The original worked example here was `monad_pipeline.enabled`, handled by a
+`reconcilePipelineEnabled` helper that kept a null prior when the API returned
+`true`. **That approach was removed in PR #11 (ENG-9221)** — it could not cover
+`terraform import`, where prior state is null by definition, so the first plan
+after an import always showed a spurious `enabled` change. `enabled` is now
+**`Optional + Computed` with `UseStateForUnknown`**, populated from the API in
+Create/Update/Read, which makes an omitted attribute adopt the server value
+instead of needing null-preservation at all.
+
+Prefer that shape — Optional+Computed — when an attribute has a server-side
+default. Reach for null-preserving reconciliation only when Computed is wrong
+for the attribute, and remember it will not survive import.
 
 ### Scalar null/`""` guards
 
