@@ -75,7 +75,7 @@ func (r *ResourceTransform) Schema(
 	resp *resource.SchemaResponse,
 ) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Monad Secret",
+		MarkdownDescription: "Monad Transform",
 
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
