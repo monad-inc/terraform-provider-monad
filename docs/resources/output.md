@@ -29,7 +29,7 @@ Monad Connector
 
 ### Read-Only
 
-- `id` (String) Monad ConnectorIdentifier
+- `id` (String) Connector identifier
 
 <a id="nestedblock--config"></a>
 ### Nested Schema for `config`
