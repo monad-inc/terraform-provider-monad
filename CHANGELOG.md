@@ -4,6 +4,31 @@ All notable changes to this provider are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/). While the provider is pre-1.0,
 breaking changes are released as minor version bumps.
 
+## 0.3.1
+
+No breaking changes. A documentation-only patch: corrects resource schema
+descriptions that were wrong from copy-paste, and regenerates the registry
+resource pages so their titles use the canonical provider name.
+
+### Fixed
+
+- **`monad_transform` was described as "Monad Secret".** The resource's
+  `MarkdownDescription` had been copy-pasted from `monad_secret`, so both the
+  provider schema and the published registry page for `monad_transform`
+  announced it as a secret. It now reads "Monad Transform".
+- **`id` on `monad_input` / `monad_output` was described as "Monad
+  ConnectorIdentifier".** Corrected to "Connector identifier".
+
+### Changed
+
+- Registry resource pages regenerated so `page_title` uses the canonical
+  provider name, and the `id` attribute descriptions above are reflected in
+  `docs/resources/`.
+
+No provider behaviour changes in this release — schema descriptions and
+generated docs only. Practitioners upgrading from 0.3.0 need no configuration
+changes and will see no plan diff.
+
 ## 0.3.0
 
 No breaking changes. Resolves the `monad_pipeline` import issue listed under
