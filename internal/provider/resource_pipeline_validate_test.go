@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -232,4 +234,67 @@ func TestFindPipelineCycle(t *testing.T) {
 		"mid": {"sink"},
 	}
 	assert.Empty(t, findPipelineCycle([]string{"in", "mid", "sink"}, acyclic))
+}
+
+// Counting and format limits, mirroring core's NodeLimit / SlugMaxLength /
+// IsDNS1123Label. Core caps a node's incoming edges at one and leaves out-degree
+// unbounded, so there is deliberately no fan-out or edge-count limit to test.
+func TestValidatePipelineGraphNodeLimit(t *testing.T) {
+	nodes := []ResourcePipelineNode{graphNode("in", "input")}
+	edges := []ResourcePipelineEdge{}
+	for i := 0; i < pipelineNodeLimit; i++ {
+		slug := fmt.Sprintf("sink-%d", i)
+		nodes = append(nodes, graphNode(slug, "output"))
+		edges = append(edges, graphEdge("in", slug))
+	}
+
+	// 51 nodes: one over the limit.
+	resp := validateGraph(nodes, edges)
+	require.True(t, resp.Diagnostics.HasError())
+	assert.Contains(t, summaries(resp), "Too many nodes in pipeline")
+
+	// 50 nodes is fine — and proves a 49-way fan-out from one input is legal,
+	// since only in-degree is capped.
+	resp = validateGraph(nodes[:pipelineNodeLimit], edges[:pipelineNodeLimit-1])
+	assert.False(t, resp.Diagnostics.HasError(), "at the limit must validate: %v", summaries(resp))
+}
+
+func TestValidatePipelineGraphSlugFormat(t *testing.T) {
+	cases := []struct {
+		name    string
+		slug    string
+		wantSum string
+	}{
+		{"underscore", "drop_low_value", "Invalid node slug"},
+		{"uppercase", "DropLowValue", "Invalid node slug"},
+		{"dot", "drop.low.value", "Invalid node slug"},
+		{"leading dash", "-leading", "Invalid node slug"},
+		{"trailing dash", "trailing-", "Invalid node slug"},
+		{"too long", strings.Repeat("a", nodeSlugMaxLength+1), "Node slug is too long"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := validateGraph(
+				[]ResourcePipelineNode{
+					graphNode("in", "input"),
+					graphNode(tc.slug, "output"),
+				},
+				[]ResourcePipelineEdge{graphEdge("in", tc.slug)},
+			)
+			require.True(t, resp.Diagnostics.HasError())
+			assert.Contains(t, summaries(resp), tc.wantSum)
+		})
+	}
+
+	t.Run("hyphenated lowercase is valid", func(t *testing.T) {
+		resp := validateGraph(
+			[]ResourcePipelineNode{
+				graphNode("in", "input"),
+				graphNode("drop-low-value-fields", "output"),
+			},
+			[]ResourcePipelineEdge{graphEdge("in", "drop-low-value-fields")},
+		)
+		assert.False(t, resp.Diagnostics.HasError(), "%v", summaries(resp))
+	})
 }

@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -57,11 +58,37 @@ var (
 	validTerminatingNodeTypes = []string{"output"}
 )
 
+// Limits mirroring core/pkg/pipeline_validation/rules.go. There is deliberately
+// no fan-out or edge-count limit to mirror: core caps a node's *incoming* edges
+// at one and leaves out-degree unbounded, which is what makes fan-out the
+// routing idiom.
+const (
+	// pipelineNodeLimit is core's NodeLimit.
+	pipelineNodeLimit = 50
+	// nodeSlugMaxLength is core's SlugMaxLength.
+	nodeSlugMaxLength = 60
+)
+
+// dns1123Label mirrors k8svalidation.IsDNS1123Label, which core applies to node
+// slugs: lowercase alphanumerics and '-', starting and ending alphanumeric.
+var dns1123Label = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+
 // validatePipelineGraph mirrors the topology checks the API runs in
 // core/pkg/pipeline_validation/rules.go, so an invalid graph is reported at plan
 // instead of as a 400 part-way through an apply — after other components in the
 // same configuration have already been created.
 func validatePipelineGraph(data ResourcePipelineModel, resp *resource.ValidateConfigResponse) {
+	if len(data.Nodes) > pipelineNodeLimit {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("nodes"),
+			"Too many nodes in pipeline",
+			fmt.Sprintf(
+				"This pipeline declares %d nodes; the limit is %d. Split the work across "+
+					"multiple pipelines.", len(data.Nodes), pipelineNodeLimit,
+			),
+		)
+	}
+
 	// Slugs are the identity edges reference. A node may omit its slug (the
 	// server generates one), but such a node cannot be referenced by an edge.
 	slugIndex := map[string]int{}
@@ -74,6 +101,31 @@ func validatePipelineGraph(data ResourcePipelineModel, resp *resource.ValidateCo
 			continue
 		}
 		slug := node.Slug.ValueString()
+
+		// Format before length, as core does: an invalid slug is reported as
+		// malformed rather than merely long.
+		switch {
+		case !dns1123Label.MatchString(slug):
+			resp.Diagnostics.AddAttributeError(
+				path.Root("nodes").AtListIndex(i).AtName("slug"),
+				"Invalid node slug",
+				fmt.Sprintf(
+					"Slug %q must be a DNS-1123 label: lowercase letters, digits and '-', "+
+						"starting and ending with a letter or digit. Underscores, uppercase and "+
+						"dots are not accepted.", slug,
+				),
+			)
+		case len(slug) > nodeSlugMaxLength:
+			resp.Diagnostics.AddAttributeError(
+				path.Root("nodes").AtListIndex(i).AtName("slug"),
+				"Node slug is too long",
+				fmt.Sprintf(
+					"Slug %q is %d characters; the limit is %d.",
+					slug, len(slug), nodeSlugMaxLength,
+				),
+			)
+		}
+
 		if _, seen := slugIndex[slug]; seen {
 			duplicate[slug] = true
 			resp.Diagnostics.AddAttributeError(
