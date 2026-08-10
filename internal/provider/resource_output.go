@@ -87,7 +87,7 @@ func (r *ResourceOutput) Create(
 	request := monad.RoutesV2CreateOutputRequest{
 		Name:        data.Name.ValueStringPointer(),
 		Description: data.Description.ValueStringPointer(),
-		OutputType:  data.ComponentType.ValueStringPointer(),
+		Type:        data.ComponentType.ValueStringPointer(),
 		Config: &monad.SecretProcessesorOutputConfig{
 			Settings: &monad.SecretProcessesorOutputConfigSettings{
 				MapmapOfStringAny: &settings,
@@ -99,8 +99,8 @@ func (r *ResourceOutput) Create(
 	}
 
 	output, monadResp, err := r.client.OrganizationOutputsAPI.
-		V2OrganizationIdOutputsPost(ctx, r.client.OrganizationID).
-		RoutesV2CreateOutputRequest(request).
+		CreateOutput(ctx, r.client.OrganizationID).
+		CreateOutputRequest(monad.RoutesV2CreateOutputRequestAsCreateOutputRequest(&request)).
 		Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -143,7 +143,7 @@ func (r *ResourceOutput) Read(
 	}
 
 	output, monadResp, err := r.client.OrganizationOutputsAPI.
-		V1OrganizationIdOutputsOutputIdGet(
+		GetOrganizationOutput(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),
@@ -214,7 +214,7 @@ func (r *ResourceOutput) Update(
 	request := monad.RoutesV2PutOutputRequest{
 		Name:        data.Name.ValueStringPointer(),
 		Description: data.Description.ValueStringPointer(),
-		OutputType:  data.ComponentType.ValueStringPointer(),
+		Type:        data.ComponentType.ValueStringPointer(),
 		Config: &monad.SecretProcessesorOutputConfig{
 			Settings: &monad.SecretProcessesorOutputConfigSettings{
 				MapmapOfStringAny: &settings,
@@ -226,12 +226,12 @@ func (r *ResourceOutput) Update(
 	}
 
 	_, monadResp, err := r.client.OrganizationOutputsAPI.
-		V2OrganizationIdOutputsOutputIdPut(
+		ReplaceOutput(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),
 		).
-		RoutesV2PutOutputRequest(request).
+		ReplaceOutputRequest(monad.RoutesV2PutOutputRequestAsReplaceOutputRequest(&request)).
 		Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -282,7 +282,7 @@ func (r *ResourceOutput) Delete(
 	}
 
 	_, monadResp, err := r.client.OrganizationOutputsAPI.
-		V1OrganizationIdOutputsOutputIdDelete(
+		DeleteOrganizationOutput(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),

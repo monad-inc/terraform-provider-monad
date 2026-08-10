@@ -4,6 +4,44 @@ All notable changes to this provider are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/). While the provider is pre-1.0,
 breaking changes are released as minor version bumps.
 
+## Unreleased
+
+### Changed
+
+- **Modernized the generated Monad Go SDK pin** from `v0.0.0-20250711173942`
+  (2025-07-11) to `v0.0.0-20260710180932` (2026-07-10). The old pin predated
+  the API's operation-id sweep, so every SDK call site used a path-derived name
+  (`V2OrganizationIdPipelinesPost`) that no longer exists. Call sites now use
+  the operation-id names (`CreatePipeline`, `GetPipelineConfig`,
+  `ReplaceInput`, …). Every rename was checked against the new SDK's path and
+  HTTP verb so each call still targets the same endpoint and API version it did
+  before.
+- **Outputs now send the canonical `type` field.** `RoutesV2CreateOutputRequest`
+  / `RoutesV2PutOutputRequest` renamed `output_type` to `type`. The API still
+  accepts `output_type` as a deprecated alias, so this is not a behavior change
+  today, but the provider now sends the documented field rather than the
+  transitional one.
+- **Pipeline Read now calls `GetPipelineConfig`.** In the new SDK, `GetPipeline`
+  is the v1 endpoint and returns pipeline metadata with no nodes or edges;
+  `GetPipelineConfig` is the v2 endpoint the provider was already calling. The
+  URL and response shape are unchanged from before this bump.
+- **Edge conditions use the SDK's recursive `ModelsConditionEvaluatable`**,
+  which replaced the two-level `ModelsPipelineEdgeConditions` /
+  `ModelsPipelineEdgeCondition` pair. The emitted JSON is unchanged
+  (`operator`, `conditions[]`, `type_id`, `config`).
+
+No schema changes: no attribute was added, removed, or renamed, and generated
+docs are unaffected. Practitioners need no configuration changes.
+
+### Known issues
+
+- This pin is deliberately **not** the SDK's `main`. As of the 2026-08-07
+  regeneration, the connector settings `oneOf` lost its free-form
+  `MapmapOfStringAny` variant and enumerates only concrete per-connector types,
+  which would make the provider unable to send arbitrary `config.settings` —
+  the mechanism the Dynamic `settings`/`config` attributes depend on. The
+  2026-07-10 pin is the newest commit that keeps that variant.
+
 ## 0.3.1
 
 No breaking changes. A documentation-only patch: corrects resource schema

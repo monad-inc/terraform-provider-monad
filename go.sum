@@ -51,8 +51,10 @@ github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWE
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/mitchellh/go-testing-interface v1.14.1 h1:jrgshOhYAUVNMAJiKbEu7EqAwgJJ2JqpQmpLJOu07cU=
 github.com/mitchellh/go-testing-interface v1.14.1/go.mod h1:gfgS7OtZj6MA4U1UrDRp04twqAjfvlZyCfX3sDjEym8=
-github.com/monad-inc/sdk/go v0.0.0-20250711173942-fad95a92a3ca h1:PNPuJzIiw7bm0I//u31jglP5Rp4kureleiRdV6F0VEc=
-github.com/monad-inc/sdk/go v0.0.0-20250711173942-fad95a92a3ca/go.mod h1:VIZ43/fL6cb3TzaC3vorGhmYPJfa3m4DCJBjgbc36X4=
+github.com/monad-inc/sdk/go v0.0.0-20260710180932-79e5527c6fee h1:Y088cHDAG60u1pCJtNh6yYQV5PyQzu81LbeU0wHDlLE=
+github.com/monad-inc/sdk/go v0.0.0-20260710180932-79e5527c6fee/go.mod h1:o1IOFG6HfOZ2JEvEro+GgmHZ/rodydLp58kVpEFxgz4=
+github.com/monad-inc/sdk/go v0.0.0-20260810135800-1c9e3714bfa7 h1:Gkddl+OBjB2pRf+sJp96Tag30DFXl26uDYMIX20AR3o=
+github.com/monad-inc/sdk/go v0.0.0-20260810135800-1c9e3714bfa7/go.mod h1:o1IOFG6HfOZ2JEvEro+GgmHZ/rodydLp58kVpEFxgz4=
 github.com/oklog/run v1.0.0 h1:Ru7dDtJNOyC66gQ5dQmaCa0qIsAUFY3sFpK1Xk8igrw=
 github.com/oklog/run v1.0.0/go.mod h1:dlhp/R75TPv97u0XWUtDeV/lRKWPKSdTuV0TZvrmrQA=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

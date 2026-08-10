@@ -152,8 +152,8 @@ func (r *ResourceEnrichment) Create(
 	}
 
 	enrichment, monadResp, err := r.client.OrganizationEnrichmentsAPI.
-		V3OrganizationIdEnrichmentsPost(ctx, r.client.OrganizationID).
-		RoutesV3CreateEnrichmentRequest(request).
+		CreateEnrichment(ctx, r.client.OrganizationID).
+		CreateEnrichmentRequest(monad.RoutesV3CreateEnrichmentRequestAsCreateEnrichmentRequest(&request)).
 		Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -196,7 +196,7 @@ func (r *ResourceEnrichment) Read(
 	}
 
 	enrichment, monadResp, err := r.client.OrganizationEnrichmentsAPI.
-		V3OrganizationIdEnrichmentsEnrichmentIdGet(
+		GetEnrichment(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),
@@ -279,12 +279,12 @@ func (r *ResourceEnrichment) Update(
 	}
 
 	_, monadResp, err := r.client.OrganizationEnrichmentsAPI.
-		V3OrganizationIdEnrichmentsEnrichmentIdPut(
+		ReplaceEnrichment(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),
 		).
-		RoutesV3PutEnrichmentRequest(request).
+		ReplaceEnrichmentRequest(monad.RoutesV3PutEnrichmentRequestAsReplaceEnrichmentRequest(&request)).
 		Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -335,7 +335,7 @@ func (r *ResourceEnrichment) Delete(
 	}
 
 	_, monadResp, err := r.client.OrganizationEnrichmentsAPI.
-		V3OrganizationIdEnrichmentsEnrichmentIdDelete(
+		DeleteEnrichment(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),

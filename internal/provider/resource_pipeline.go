@@ -249,10 +249,10 @@ func buildPipelineRequestNodes(nodes []ResourcePipelineNode) []monad.RoutesV2Pip
 	out := make([]monad.RoutesV2PipelineRequestNode, len(nodes))
 	for i, node := range nodes {
 		out[i] = monad.RoutesV2PipelineRequestNode{
-			ComponentType: node.ComponentType.ValueString(),
+			ComponentType: monad.ModelsComponentType(node.ComponentType.ValueString()),
 			ComponentId:   node.ComponentID.ValueString(),
 			Slug:          node.Slug.ValueStringPointer(),
-			Enabled:       true,
+			Enabled:       monad.PtrBool(true),
 		}
 	}
 	return out
@@ -266,8 +266,8 @@ func buildPipelineRequestEdges(ctx context.Context, edges []ResourcePipelineEdge
 			Description:        edge.Description.ValueStringPointer(),
 			FromNodeInstanceId: edge.FromNodeInstanceSlug.ValueString(),
 			ToNodeInstanceId:   edge.ToNodeInstanceSlug.ValueString(),
-			Conditions: &monad.ModelsPipelineEdgeConditions{
-				Operator: edge.Condition.Operator.ValueStringPointer(),
+			Conditions: &monad.ModelsConditionEvaluatable{
+				Operator: (*monad.ModelsConditionOperator)(edge.Condition.Operator.ValueStringPointer()),
 			},
 		}
 
@@ -275,7 +275,7 @@ func buildPipelineRequestEdges(ctx context.Context, edges []ResourcePipelineEdge
 			continue
 		}
 
-		out[i].Conditions.Conditions = make([]monad.ModelsPipelineEdgeCondition, len(edge.Condition.Conditions))
+		out[i].Conditions.Conditions = make([]monad.ModelsConditionEvaluatable, len(edge.Condition.Conditions))
 		for j, condition := range edge.Condition.Conditions {
 			values := make([]string, 0)
 			if !condition.Config.Value.IsNull() {
@@ -284,7 +284,7 @@ func buildPipelineRequestEdges(ctx context.Context, edges []ResourcePipelineEdge
 				}
 			}
 
-			out[i].Conditions.Conditions[j] = monad.ModelsPipelineEdgeCondition{
+			out[i].Conditions.Conditions[j] = monad.ModelsConditionEvaluatable{
 				TypeId: condition.TypeID.ValueStringPointer(),
 				Config: map[string]any{
 					"key":   condition.Config.Key.ValueString(),
@@ -323,15 +323,15 @@ func (r *ResourcePipeline) Create(
 	request := monad.RoutesV2CreatePipelineRequest{
 		Name:        data.Name.ValueString(),
 		Description: data.Description.ValueStringPointer(),
-		Enabled:     enabled,
+		Enabled:     &enabled,
 		Nodes:       buildPipelineRequestNodes(data.Nodes),
 		Edges:       edges,
 	}
 
-	pipeline, monadResp, err := r.client.PipelinesAPI.V2OrganizationIdPipelinesPost(
+	pipeline, monadResp, err := r.client.PipelinesAPI.CreatePipeline(
 		ctx,
 		r.client.OrganizationID,
-	).RoutesV2CreatePipelineRequest(request).
+	).CreatePipelineRequest(monad.RoutesV2CreatePipelineRequestAsCreatePipelineRequest(&request)).
 		Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -374,8 +374,11 @@ func (r *ResourcePipeline) Read(
 		return
 	}
 
+	// GetPipelineConfig is the v2 read that returns the full node/edge graph.
+	// GetPipeline is the v1 endpoint and returns pipeline metadata only, with
+	// no nodes or edges, so it cannot drive Read.
 	pipeline, monadResp, err := r.client.PipelinesAPI.
-		V2OrganizationIdPipelinesPipelineIdGet(
+		GetPipelineConfig(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),
@@ -442,7 +445,7 @@ func buildPipelineStateNodes(pipeline *monad.ModelsPipelineConfigV2, priorNodes 
 			slug = types.StringValue(*node.Slug)
 		}
 		nodes[i] = ResourcePipelineNode{
-			ComponentType: types.StringPointerValue(node.ComponentType),
+			ComponentType: types.StringPointerValue((*string)(node.ComponentType)),
 			ComponentID:   types.StringPointerValue(node.ComponentId),
 			Slug:          slug,
 		}
@@ -469,7 +472,7 @@ func buildPipelineStateEdges(pipeline *monad.ModelsPipelineConfigV2, priorEdges 
 		operator := types.StringNull()
 		conditions := []ResourcePipelineConditionCondition{}
 		if edge.Conditions != nil {
-			operator = types.StringPointerValue(edge.Conditions.Operator)
+			operator = types.StringPointerValue((*string)(edge.Conditions.Operator))
 			conditions = make([]ResourcePipelineConditionCondition, len(edge.Conditions.Conditions))
 			for j, condition := range edge.Conditions.Conditions {
 				key := types.StringNull()
@@ -727,20 +730,20 @@ func (r *ResourcePipeline) Update(
 	}
 
 	request := monad.RoutesV2UpdatePipelineRequest{
-		Name:        data.Name.ValueString(),
+		Name:        data.Name.ValueStringPointer(),
 		Description: data.Description.ValueStringPointer(),
-		Enabled:     enabled,
+		Enabled:     &enabled,
 		Nodes:       buildPipelineRequestNodes(data.Nodes),
 		Edges:       edges,
 	}
 
 	pipeline, monadResp, err := r.client.PipelinesAPI.
-		V2OrganizationIdPipelinesPipelineIdPatch(
+		UpdatePipeline(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),
 		).
-		RoutesV2UpdatePipelineRequest(request).
+		UpdatePipelineRequest(monad.RoutesV2UpdatePipelineRequestAsUpdatePipelineRequest(&request)).
 		Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -776,7 +779,7 @@ func (r *ResourcePipeline) Delete(
 		return
 	}
 
-	_, monadResp, err := r.client.PipelinesAPI.V2OrganizationIdPipelinesPipelineIdDelete(
+	_, monadResp, err := r.client.PipelinesAPI.DeletePipeline(
 		ctx,
 		r.client.OrganizationID,
 		data.ID.ValueString(),
