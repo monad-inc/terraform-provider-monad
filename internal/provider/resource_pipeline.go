@@ -143,12 +143,8 @@ func (r *ResourcePipeline) Schema(
 		Blocks: map[string]schema.Block{
 			"nodes": schema.ListNestedBlock{
 				MarkdownDescription: "List of nodes in the pipeline",
-				// Node order is not semantically meaningful; suppress a plan
-				// diff that only reorders an unchanged node set — most notably
-				// the first plan after `terraform import` (ENG-9221).
-				PlanModifiers: []planmodifier.List{
-					pipelineNodesOrderInsensitive{},
-				},
+				// Deliberately NO order-insensitive plan modifier here — see the
+				// note on "edges" below (ENG-9572).
 				NestedObject: schema.NestedBlockObject{
 					Attributes: map[string]schema.Attribute{
 						"component_type": schema.StringAttribute{
@@ -168,12 +164,25 @@ func (r *ResourcePipeline) Schema(
 			},
 			"edges": schema.ListNestedBlock{
 				MarkdownDescription: "List of edges in the pipeline",
-				// Edge order is not semantically meaningful; suppress a plan
-				// diff that only reorders an unchanged edge set — most notably
-				// the first plan after `terraform import` (ENG-9221).
-				PlanModifiers: []planmodifier.List{
-					pipelineEdgesOrderInsensitive{},
-				},
+				// Deliberately NO order-insensitive plan modifier.
+				//
+				// ENG-9221 added one that set the planned value to the prior
+				// state whenever state and config held the same edge set in a
+				// different order, to suppress the reorder diff after
+				// `terraform import`. That is not a legal plan: Terraform
+				// requires a plan-known attribute to equal the config value at
+				// the SAME index, so pinning the plan to state order made every
+				// position where the orders disagreed an error —
+				// "Provider produced invalid plan" — which also blocked
+				// destroy (ENG-9572).
+				//
+				// The premise is unsatisfiable for a List: when config order
+				// and state order differ, no single plan can equal config
+				// element-wise AND equal state, so a reorder diff after import
+				// is unavoidable here. It is cosmetic and one-time — a single
+				// apply normalizes it — which is strictly better than a hard
+				// error. Modelling nodes/edges as Sets, which is what they
+				// semantically are, is the real fix and is tracked separately.
 				NestedObject: schema.NestedBlockObject{
 					Attributes: map[string]schema.Attribute{
 						"name": schema.StringAttribute{

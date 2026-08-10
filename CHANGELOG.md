@@ -4,6 +4,45 @@ All notable changes to this provider are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/). While the provider is pre-1.0,
 breaking changes are released as minor version bumps.
 
+## Unreleased
+
+### Fixed
+
+- **`terraform import` of a `monad_pipeline` no longer produces
+  `Provider produced invalid plan`.** Importing a pipeline whose edges carry a
+  `name` or a nested `condition.conditions` block left state that Terraform
+  rejected: the next `plan` failed with one error per mismatched attribute, and
+  `destroy` was blocked with the same errors until the pipeline was removed
+  from state by hand. (ENG-9572)
+
+  Cause: the order-insensitive plan modifiers added in 0.3.0 set the planned
+  value to the prior state whenever state and config held the same `nodes` /
+  `edges` set in a different order. Terraform requires a plan-known attribute
+  to equal the config value at the **same index**, so pinning the plan to state
+  order made every position where the two orders disagreed an invalid plan.
+  After import — the case the modifiers were written for — state carries API
+  order while config carries the authored order, so they disagree by
+  construction. The `nodes` modifier had the same defect; it stayed latent only
+  because imported node order happened to match config order in practice.
+
+  Both modifiers are removed. They cannot be repaired: for a List, when config
+  order and state order differ, no single plan can be element-wise equal to
+  config **and** equal to state.
+
+### Changed
+
+- **A one-time reorder diff after `terraform import` is expected again.** This
+  is the 0.3.0 ENG-9221 behavior reverting, deliberately: an imported pipeline
+  may show a `nodes` / `edges` reordering on the first plan. A single `apply`
+  normalizes it and later plans are clean. Trading a cosmetic one-time diff for
+  a hard error that also blocked `destroy` is the right side of that trade, and
+  it is what 0.2.0 documented under known issues.
+
+  The durable fix is to model `nodes` and `edges` as **sets** rather than
+  lists — order genuinely is not meaningful — which removes the reorder diff
+  without lying to Terraform. That is a breaking schema change and is tracked
+  separately.
+
 ## 0.3.1
 
 No breaking changes. A documentation-only patch: corrects resource schema
