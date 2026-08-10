@@ -60,7 +60,7 @@ Optional:
 
 Optional:
 
-- `config` (Block, Optional) Configuration for the condition (see [below for nested schema](#nestedblock--edges--condition--conditions--config))
+- `config` (Block, Optional) Configuration for the condition. Which fields apply depends on `type_id`; setting one the rule does not read, or omitting one it requires, is reported at plan time. (see [below for nested schema](#nestedblock--edges--condition--conditions--config))
 - `type_id` (String) Type ID for the condition
 
 <a id="nestedblock--edges--condition--conditions--config"></a>
@@ -68,9 +68,17 @@ Optional:
 
 Optional:
 
-- `key` (String) The key to check for in the record
-- `rate` (String) The rate at which records should be passed through the condition. Example: '100ms', '1s', '1m'
-- `value` (List of String) The string values to check for in the record
+- `case_insensitive` (Boolean) Compare case-insensitively (strings only). Accepted by `equals`, `equals_any`, `contains`, `starts_with` and `ends_with`.
+- `key` (String) The key to check in the record. Use `*` to check all keys. Required by every rule except `sample`, where it is optional and selects hash-based sampling.
+- `not` (Boolean) Negate the result of this condition. Accepted by every rule except `sample`.
+- `null` (Boolean) For `is_empty`: also treat an explicit JSON null as empty.
+- `pattern` (String) The regular expression to match against, for `matches_regex`.
+- `percent` (Number) The percentage of records to pass through, for `sample`. Examples: `12.3`, `50`.
+- `rate` (String, Deprecated) **Deprecated.** The rate at which records are passed through, for the legacy `sample_rate` rule. Example: `'100ms'`, `'1s'`, `'1m'`. Use `sample` with `percent` instead.
+- `raw` (Boolean) For `contains`: treat the field value as a raw string and substring-match it. When false, arrays and objects are checked for exact element matches.
+- `value` (String) The single value to compare against, for `equals`, `contains`, `starts_with`, `ends_with`, `greater_than` and `less_than`. Numeric rules accept a numeric string (`"100"`). Supports JSON syntax: quoted strings, bare words, numbers, booleans.
+- `values` (List of String) The set of values to match against, for `equals_any`.
+- `whitespace_string` (Boolean) For `is_empty`: also treat a whitespace-only string as empty.
 
 
 

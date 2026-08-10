@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"sort"
 
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -61,10 +60,22 @@ type ResourcePipelineConditionCondition struct {
 	Config ResourcePipelineConditionConditionConfig `tfsdk:"config"`
 }
 
+// ResourcePipelineConditionConditionConfig carries every field in the API's
+// edge-condition rule catalogue. Which of them a given leaf may set depends on
+// its type_id — see conditionRules in condition_rules.go, which drives
+// serialization, read-back and plan-time validation from one table.
 type ResourcePipelineConditionConditionConfig struct {
-	Key   types.String `tfsdk:"key"`
-	Value types.List   `tfsdk:"value"`
-	Rate  types.String `tfsdk:"rate"`
+	Key              types.String  `tfsdk:"key"`
+	Value            types.String  `tfsdk:"value"`
+	Values           types.List    `tfsdk:"values"`
+	Pattern          types.String  `tfsdk:"pattern"`
+	Percent          types.Float64 `tfsdk:"percent"`
+	Rate             types.String  `tfsdk:"rate"`
+	Not              types.Bool    `tfsdk:"not"`
+	CaseInsensitive  types.Bool    `tfsdk:"case_insensitive"`
+	Raw              types.Bool    `tfsdk:"raw"`
+	Null             types.Bool    `tfsdk:"null"`
+	WhitespaceString types.Bool    `tfsdk:"whitespace_string"`
 }
 
 func NewResourcePipeline() resource.Resource {
@@ -110,6 +121,9 @@ func (r *ResourcePipeline) Schema(
 ) {
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Monad Pipeline",
+		// v1 (ENG-9546): edge condition `config.value` changed from a list of
+		// strings to a single string. See resource_pipeline_upgrade.go.
+		Version: 1,
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -214,19 +228,68 @@ func (r *ResourcePipeline) Schema(
 										},
 										Blocks: map[string]schema.Block{
 											"config": schema.SingleNestedBlock{
-												MarkdownDescription: "Configuration for the condition",
+												MarkdownDescription: "Configuration for the condition. Which fields apply " +
+													"depends on `type_id`; setting one the rule does not read, or omitting " +
+													"one it requires, is reported at plan time.",
 												Attributes: map[string]schema.Attribute{
 													"key": schema.StringAttribute{
-														MarkdownDescription: "The key to check for in the record",
-														Optional:            true,
+														MarkdownDescription: "The key to check in the record. Use `*` to check all keys. " +
+															"Required by every rule except `sample`, where it is optional and selects " +
+															"hash-based sampling.",
+														Optional: true,
 													},
-													"value": schema.ListAttribute{
-														MarkdownDescription: "The string values to check for in the record",
+													"value": schema.StringAttribute{
+														MarkdownDescription: "The single value to compare against, for `equals`, `contains`, " +
+															"`starts_with`, `ends_with`, `greater_than` and `less_than`. Numeric rules " +
+															"accept a numeric string (`\"100\"`). Supports JSON syntax: quoted strings, " +
+															"bare words, numbers, booleans.",
+														Optional: true,
+													},
+													"values": schema.ListAttribute{
+														MarkdownDescription: "The set of values to match against, for `equals_any`.",
 														Optional:            true,
 														ElementType:         types.StringType,
 													},
+													"pattern": schema.StringAttribute{
+														MarkdownDescription: "The regular expression to match against, for `matches_regex`.",
+														Optional:            true,
+													},
+													"percent": schema.Float64Attribute{
+														MarkdownDescription: "The percentage of records to pass through, for `sample`. " +
+															"Examples: `12.3`, `50`.",
+														Optional: true,
+													},
 													"rate": schema.StringAttribute{
-														MarkdownDescription: "The rate at which records should be passed through the condition. Example: '100ms', '1s', '1m'",
+														MarkdownDescription: "**Deprecated.** The rate at which records are passed through, " +
+															"for the legacy `sample_rate` rule. Example: `'100ms'`, `'1s'`, `'1m'`. " +
+															"Use `sample` with `percent` instead.",
+														Optional: true,
+														DeprecationMessage: "The `sample_rate` rule is superseded by `sample`. Use " +
+															"type_id = \"sample\" with `percent` instead; `rate` is not surfaced in the " +
+															"Monad UI and is not part of the API's published rule catalogue.",
+													},
+													"not": schema.BoolAttribute{
+														MarkdownDescription: "Negate the result of this condition. Accepted by every rule " +
+															"except `sample`.",
+														Optional: true,
+													},
+													"case_insensitive": schema.BoolAttribute{
+														MarkdownDescription: "Compare case-insensitively (strings only). Accepted by " +
+															"`equals`, `equals_any`, `contains`, `starts_with` and `ends_with`.",
+														Optional: true,
+													},
+													"raw": schema.BoolAttribute{
+														MarkdownDescription: "For `contains`: treat the field value as a raw string and " +
+															"substring-match it. When false, arrays and objects are checked for exact " +
+															"element matches.",
+														Optional: true,
+													},
+													"null": schema.BoolAttribute{
+														MarkdownDescription: "For `is_empty`: also treat an explicit JSON null as empty.",
+														Optional:            true,
+													},
+													"whitespace_string": schema.BoolAttribute{
+														MarkdownDescription: "For `is_empty`: also treat a whitespace-only string as empty.",
 														Optional:            true,
 													},
 												},
@@ -277,20 +340,12 @@ func buildPipelineRequestEdges(ctx context.Context, edges []ResourcePipelineEdge
 
 		out[i].Conditions.Conditions = make([]monad.ModelsConditionEvaluatable, len(edge.Condition.Conditions))
 		for j, condition := range edge.Condition.Conditions {
-			values := make([]string, 0)
-			if !condition.Config.Value.IsNull() {
-				if diag := condition.Config.Value.ElementsAs(ctx, &values, false); diag.HasError() {
-					return nil, fmt.Errorf("failed to read condition values for edge %d condition %d", i, j)
-				}
-			}
-
+			// Serialize per type_id: emit only the fields this rule reads, and
+			// only when set. Sending the same three keys for every rule is what
+			// made value comparisons silently route nothing (ENG-9546).
 			out[i].Conditions.Conditions[j] = monad.ModelsConditionEvaluatable{
 				TypeId: condition.TypeID.ValueStringPointer(),
-				Config: map[string]any{
-					"key":   condition.Config.Key.ValueString(),
-					"value": values,
-					"rate":  condition.Config.Rate.ValueString(),
-				},
+				Config: buildConditionConfig(condition.TypeID.ValueString(), condition.Config),
 			}
 		}
 	}
@@ -475,34 +530,10 @@ func buildPipelineStateEdges(pipeline *monad.ModelsPipelineConfigV2, priorEdges 
 			operator = types.StringPointerValue((*string)(edge.Conditions.Operator))
 			conditions = make([]ResourcePipelineConditionCondition, len(edge.Conditions.Conditions))
 			for j, condition := range edge.Conditions.Conditions {
-				key := types.StringNull()
-				if k, ok := condition.Config["key"].(string); ok && k != "" {
-					key = types.StringValue(k)
-				}
-
-				rate := types.StringNull()
-				if rt, ok := condition.Config["rate"].(string); ok && rt != "" {
-					rate = types.StringValue(rt)
-				}
-
-				value := types.ListNull(types.StringType)
-				if v, ok := condition.Config["value"].([]interface{}); ok && len(v) > 0 {
-					values := make([]attr.Value, len(v))
-					for k, val := range v {
-						if strVal, ok := val.(string); ok {
-							values[k] = types.StringValue(strVal)
-						}
-					}
-					value = types.ListValueMust(types.StringType, values)
-				}
-
+				typeID := types.StringPointerValue(condition.TypeId)
 				conditions[j] = ResourcePipelineConditionCondition{
-					TypeID: types.StringPointerValue(condition.TypeId),
-					Config: ResourcePipelineConditionConditionConfig{
-						Key:   key,
-						Value: value,
-						Rate:  rate,
-					},
+					TypeID: typeID,
+					Config: conditionConfigFromAPI(typeID.ValueString(), condition.Config),
 				}
 			}
 		}
@@ -667,11 +698,22 @@ func pipelineEdgesComparable(edges []ResourcePipelineEdge) []any {
 	for i, e := range edges {
 		conditions := make([]any, len(e.Condition.Conditions))
 		for j, c := range e.Condition.Conditions {
+			// Every config field must appear here. A field missing from the
+			// comparison is one whose drift reconcilePipelineEdges cannot see,
+			// so it would silently keep the prior state value.
 			conditions[j] = map[string]any{
-				"type_id": stringOrNil(c.TypeID),
-				"key":     stringOrNil(c.Config.Key),
-				"rate":    stringOrNil(c.Config.Rate),
-				"value":   listOrNil(c.Config.Value),
+				"type_id":           stringOrNil(c.TypeID),
+				"key":               stringOrNil(c.Config.Key),
+				"value":             stringOrNil(c.Config.Value),
+				"values":            listOrNil(c.Config.Values),
+				"pattern":           stringOrNil(c.Config.Pattern),
+				"percent":           float64OrNil(c.Config.Percent),
+				"rate":              stringOrNil(c.Config.Rate),
+				"not":               boolOrNil(c.Config.Not),
+				"case_insensitive":  boolOrNil(c.Config.CaseInsensitive),
+				"raw":               boolOrNil(c.Config.Raw),
+				"null":              boolOrNil(c.Config.Null),
+				"whitespace_string": boolOrNil(c.Config.WhitespaceString),
 			}
 		}
 		out[i] = map[string]any{
@@ -704,6 +746,20 @@ func listOrNil(l types.List) any {
 		}
 	}
 	return out
+}
+
+func boolOrNil(b types.Bool) any {
+	if b.IsNull() || b.IsUnknown() {
+		return nil
+	}
+	return b.ValueBool()
+}
+
+func float64OrNil(f types.Float64) any {
+	if f.IsNull() || f.IsUnknown() {
+		return nil
+	}
+	return f.ValueFloat64()
 }
 
 func (r *ResourcePipeline) Update(
