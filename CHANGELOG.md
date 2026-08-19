@@ -34,18 +34,11 @@ compares a value, and modernizes the generated SDK the provider is built on.
   the offending block's path — instead of a pipeline that applies cleanly and
   silently routes nothing. An unrecognized `type_id` warns rather than errors, so
   a rule newly shipped by the API does not break an existing configuration.
-- **Plan-time validation of the pipeline graph**, mirroring the checks the API
-  runs: duplicate node slugs, an edge naming a slug no node declares, a node with
-  more than one incoming edge, a pipeline without exactly one input root, an
-  outgoing edge from an output, a middle node that is not a transform or
-  enrichment, a non-output node that leads nowhere, and cycles. It also enforces
-  core's limits: at most 50 nodes per pipeline, and node slugs that are DNS-1123
-  labels of at most 60 characters. These previously surfaced as a `400` part-way
-  through an apply, after other components had already been created.
 
-  Note there is deliberately **no** fan-out or edge-count limit: the platform
-  caps a node's *incoming* edges at one and leaves out-degree unbounded, so one
-  node may feed as many branches as you like.
+  This validates the provider's own serialization contract — the fields the
+  provider would otherwise drop before the request reaches the API — not the
+  pipeline graph, whose topology rules (cycles, node in-degree, root type, node
+  and slug limits) remain the API's responsibility.
 
 ### Changed (BREAKING)
 
