@@ -6,6 +6,58 @@ breaking changes are released as minor version bumps.
 
 ## Unreleased
 
+Contains a breaking change (edge condition `config.value`) — see below. It fixes
+conditional edge routing, which did not work through Terraform for any rule that
+compares a value, and modernizes the generated SDK the provider is built on.
+
+### Fixed
+
+- **Edge conditions that compare values now work.** The provider serialized every
+  condition leaf as `{key, value, rate}` regardless of `type_id`, with `value`
+  always a JSON array. The API's rules expect different shapes, so 9 of the 11
+  rules routed **zero records** — and nothing errored at plan, at apply, or at
+  runtime. On a routing fork that is data loss with a green check. Only
+  `key_exists` and `is_empty` worked, because they read `key` alone. (ENG-9546)
+
+  Each leaf is now serialized from the API's rule catalogue: only the fields that
+  rule reads, and only when set.
+
+### Added
+
+- **The full condition rule vocabulary** on `edges.condition.conditions.config`:
+  `values` (for `equals_any`), `pattern` (`matches_regex`), `percent` (`sample`),
+  and the modifier flags `not` (every rule except `sample`), `case_insensitive`
+  (the five string rules), `raw` (`contains`), and `null` / `whitespace_string`
+  (`is_empty`). Previously none of these could be expressed at all.
+- **Plan-time validation of each condition leaf.** A leaf missing a field its
+  rule requires, or setting one the rule ignores, is now an error at `plan` with
+  the offending block's path — instead of a pipeline that applies cleanly and
+  silently routes nothing. An unrecognized `type_id` warns rather than errors, so
+  a rule newly shipped by the API does not break an existing configuration.
+
+  This validates the provider's own serialization contract — the fields the
+  provider would otherwise drop before the request reaches the API — not the
+  pipeline graph, whose topology rules (cycles, node in-degree, root type, node
+  and slug limits) remain the API's responsibility.
+
+### Changed (BREAKING)
+
+- **`edges.condition.conditions.config.value` is now a string, not a list of
+  strings.**
+
+  **Migration:**
+  - Single-value rules (`equals`, `contains`, `starts_with`, `ends_with`,
+    `greater_than`, `less_than`) take a scalar: `value = ["hot"]` → `value = "hot"`.
+    Numeric rules accept a numeric string, e.g. `value = "100"`.
+  - Matching several values is `equals_any` with the new attribute:
+    `value = ["hot", "warm"]` → `type_id = "equals_any"`, `values = ["hot", "warm"]`.
+  - State migrates automatically (schema version 0 → 1): the old `value` list is
+    moved to `values` and `value` is left null. Configuration must still be
+    updated by hand, and the first plan will show that as a diff.
+
+  Every configuration this breaks is one that was already silently routing
+  nothing, so the failure surfaces as an error where it used to be invisible.
+
 ### Changed
 
 - **Modernized the generated Monad Go SDK pin** from `v0.0.0-20250711173942`
@@ -30,17 +82,20 @@ breaking changes are released as minor version bumps.
   `ModelsPipelineEdgeCondition` pair. The emitted JSON is unchanged
   (`operator`, `conditions[]`, `type_id`, `config`).
 
-No schema changes: no attribute was added, removed, or renamed, and generated
-docs are unaffected. Practitioners need no configuration changes.
+### Deprecated
+
+- **`config.rate` / the `sample_rate` rule.** It predates `sample`, is not in the
+  API's published rule catalogue, and is not surfaced in the Monad UI. It still
+  works and is still sent; use `type_id = "sample"` with `percent` instead.
 
 ### Known issues
 
-- This pin is deliberately **not** the SDK's `main`. As of the 2026-08-07
+- The SDK pin is deliberately **not** the SDK's `main`. As of the 2026-08-07
   regeneration, the connector settings `oneOf` lost its free-form
   `MapmapOfStringAny` variant and enumerates only concrete per-connector types,
   which would make the provider unable to send arbitrary `config.settings` —
   the mechanism the Dynamic `settings`/`config` attributes depend on. The
-  2026-07-10 pin is the newest commit that keeps that variant.
+  2026-07-10 pin is the newest commit that keeps that variant. (ENG-9585)
 
 ## 0.3.1
 
