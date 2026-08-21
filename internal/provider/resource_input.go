@@ -99,8 +99,8 @@ func (r *ResourceInput) Create(
 	}
 
 	input, monadResp, err := r.client.OrganizationInputsAPI.
-		V2OrganizationIdInputsPost(ctx, r.client.OrganizationID).
-		RoutesV2CreateInputRequest(request).
+		CreateInput(ctx, r.client.OrganizationID).
+		CreateInputRequest(monad.RoutesV2CreateInputRequestAsCreateInputRequest(&request)).
 		Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -143,7 +143,7 @@ func (r *ResourceInput) Read(
 	}
 
 	input, monadResp, err := r.client.OrganizationInputsAPI.
-		V1OrganizationIdInputsInputIdGet(
+		GetOrganizationInput(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),
@@ -226,12 +226,12 @@ func (r *ResourceInput) Update(
 	}
 
 	_, monadResp, err := r.client.OrganizationInputsAPI.
-		V2OrganizationIdInputsInputIdPut(
+		ReplaceInput(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),
 		).
-		RoutesV2PutInputRequest(request).
+		ReplaceInputRequest(monad.RoutesV2PutInputRequestAsReplaceInputRequest(&request)).
 		Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -282,7 +282,7 @@ func (r *ResourceInput) Delete(
 	}
 
 	_, monadResp, err := r.client.OrganizationInputsAPI.
-		V1OrganizationIdInputsInputIdDelete(
+		DeleteOrganizationInput(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),

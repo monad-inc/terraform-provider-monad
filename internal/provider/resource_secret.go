@@ -129,8 +129,8 @@ func (r *ResourceSecret) Create(
 	}
 
 	secret, monadResp, err := r.client.SecretsAPI.
-		V2OrganizationIdSecretsPost(ctx, r.client.OrganizationID).
-		RoutesV2CreateOrUpdateSecretRequest(request).
+		CreateSecret(ctx, r.client.OrganizationID).
+		CreateSecretRequest(monad.RoutesV2CreateOrUpdateSecretRequestAsCreateSecretRequest(&request)).
 		Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -165,7 +165,7 @@ func (r *ResourceSecret) Read(
 	}
 
 	secret, monadResp, err := r.client.SecretsAPI.
-		V2OrganizationIdSecretsSecretIdGet(
+		GetSecret(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),
@@ -216,12 +216,12 @@ func (r *ResourceSecret) Update(
 	}
 
 	secret, monadResp, err := r.client.SecretsAPI.
-		V2OrganizationIdSecretsSecretIdPatch(
+		UpdateSecret(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),
 		).
-		RoutesV2CreateOrUpdateSecretRequest(request).
+		CreateSecretRequest(monad.RoutesV2CreateOrUpdateSecretRequestAsCreateSecretRequest(&request)).
 		Execute()
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -258,7 +258,7 @@ func (r *ResourceSecret) Delete(
 	}
 
 	monadResp, err := r.client.SecretsAPI.
-		V2OrganizationIdSecretsSecretIdDelete(
+		DeleteSecret(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),

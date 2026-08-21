@@ -135,10 +135,10 @@ func (r *ResourceTransform) Create(
 	}
 
 	transform, monadResp, err := r.client.OrganizationTransformsAPI.
-		V1OrganizationIdTransformsPost(
+		CreateTransform(
 			ctx,
 			r.client.OrganizationID,
-		).RoutesCreateTransformRequest(request).
+		).CreateTransformRequest(monad.RoutesCreateTransformRequestAsCreateTransformRequest(&request)).
 		Execute()
 
 	if err != nil {
@@ -180,7 +180,7 @@ func (r *ResourceTransform) Read(
 	}
 
 	transform, monadResp, err := r.client.OrganizationTransformsAPI.
-		V1OrganizationIdTransformsTransformIdGet(
+		GetOrganizationTransform(
 			ctx,
 			data.ID.ValueString(),
 			r.client.OrganizationID,
@@ -275,13 +275,13 @@ func (r *ResourceTransform) Update(
 	}
 
 	request := monad.RoutesUpdateTransformRequest{
-		Name:        data.Name.ValueString(),
+		Name:        data.Name.ValueStringPointer(),
 		Description: data.Description.ValueStringPointer(),
 		Config:      transformConfig,
 	}
 
 	_, monadResp, err := r.client.OrganizationTransformsAPI.
-		V1OrganizationIdTransformsTransformIdPatch(
+		UpdateOrganizationTransform(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),
@@ -320,7 +320,7 @@ func (r *ResourceTransform) Delete(
 	}
 
 	_, monadResp, err := r.client.OrganizationTransformsAPI.
-		V1OrganizationIdTransformsTransformIdDelete(
+		DeleteOrganizationTransform(
 			ctx,
 			r.client.OrganizationID,
 			data.ID.ValueString(),
