@@ -280,11 +280,13 @@ func (r *ResourceAlertRule) Read(
 	}
 	data.PipelineIDs = pipelineIDs
 
-	// Reconcile rule_config for drift without cty-type churn: keep the prior
-	// state value when the API-derived config is semantically equal, adopting
-	// the API value only on genuine drift. On import prior state is null, so the
-	// API value populates.
-	config, err := reconcileDynamic(data.RuleConfig, rule.RuleConfig)
+	// Reconcile rule_config for drift without cty-type churn, ignoring
+	// server-injected keys the practitioner never authored (e.g. the API adds
+	// settings.billing_account_id to a billing-metrics rule). Keep the prior
+	// state value when the practitioner's own keys are unchanged, and only adopt
+	// the API value on genuine drift. On import prior state is null, so the API
+	// value populates.
+	config, err := reconcileAlertRuleConfig(data.RuleConfig, rule.RuleConfig)
 	if err != nil {
 		resp.Diagnostics.AddError("Failed to reconcile alert rule config", err.Error())
 		return
@@ -416,6 +418,50 @@ func optionalString(in *string) types.String {
 		return types.StringNull()
 	}
 	return types.StringValue(*in)
+}
+
+// reconcileAlertRuleConfig refreshes rule_config for drift detection while
+// ignoring server-injected keys the practitioner never authored. Some alert
+// types have the API compute and inject a field into the stored config — a
+// billing-metrics rule created with `{ usd_amount }` reads back as
+// `{ usd_amount, billing_account_id }`. That extra key is not in the
+// practitioner's HCL, so the shared semantic-equality would see drift and
+// adopt the API value, manufacturing a perpetual diff for that type.
+//
+// So before comparing, drop every API key absent from the prior state value
+// (recursing into nested objects), then hand the masked value to the shared
+// reconcileDynamic. The practitioner's own keys still diff on genuine change.
+// On import prior state is null — there is no authored representation to mask
+// against — so the full API value populates, and a one-time diff on the
+// injected key is expected on the first plan (as with monad_pipeline import).
+func reconcileAlertRuleConfig(prior types.Dynamic, apiValue map[string]any) (types.Dynamic, error) {
+	priorMap, err := tfDynamicToMapAny(prior)
+	if err != nil || priorMap == nil {
+		return AnyToDynamic(apiValue)
+	}
+	return reconcileDynamic(prior, maskServerInjectedKeys(priorMap, apiValue))
+}
+
+// maskServerInjectedKeys returns a copy of api containing only the keys that
+// also exist in prior, recursing into nested objects. Keys present in api but
+// not in prior are treated as server-populated and dropped, so they never
+// reach state or the drift comparison.
+func maskServerInjectedKeys(prior, api map[string]any) map[string]any {
+	out := make(map[string]any, len(api))
+	for k, av := range api {
+		pv, ok := prior[k]
+		if !ok {
+			continue
+		}
+		pm, pok := pv.(map[string]any)
+		am, aok := av.(map[string]any)
+		if pok && aok {
+			out[k] = maskServerInjectedKeys(pm, am)
+			continue
+		}
+		out[k] = av
+	}
+	return out
 }
 
 // alertRulePipelineIDs converts the pipeline_ids set into a plain []string for

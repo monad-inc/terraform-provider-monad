@@ -96,6 +96,66 @@ func TestAlertRuleRuleConfigSemanticEqual(t *testing.T) {
 	assert.True(t, ok, "rule_config plan modifier must be dynamicConfigSemanticEqual")
 }
 
+// TestMaskServerInjectedKeys covers the billing-metrics case: the API injects
+// settings.billing_account_id, which must be dropped from the comparison so it
+// does not manufacture a perpetual diff (ENG-9549). Keys the practitioner
+// authored are kept, and genuine value changes on those keys survive masking.
+func TestMaskServerInjectedKeys(t *testing.T) {
+	prior := map[string]any{
+		"settings": map[string]any{"usd_amount": float64(5000)},
+	}
+	api := map[string]any{
+		"settings": map[string]any{
+			"usd_amount":         float64(5000),
+			"billing_account_id": "6832",
+		},
+	}
+
+	masked := maskServerInjectedKeys(prior, api)
+	assert.Equal(t, map[string]any{
+		"settings": map[string]any{"usd_amount": float64(5000)},
+	}, masked, "server-injected billing_account_id must be dropped")
+
+	// A genuine change to an authored key survives masking.
+	apiDrift := map[string]any{
+		"settings": map[string]any{
+			"usd_amount":         float64(6000),
+			"billing_account_id": "6832",
+		},
+	}
+	maskedDrift := maskServerInjectedKeys(prior, apiDrift)
+	assert.Equal(t, float64(6000), maskedDrift["settings"].(map[string]any)["usd_amount"],
+		"a real change to usd_amount must not be masked away")
+	_, hasInjected := maskedDrift["settings"].(map[string]any)["billing_account_id"]
+	assert.False(t, hasInjected, "injected key still dropped even when another key drifts")
+}
+
+// TestReconcileAlertRuleConfig ties the masking to the reconcile: a billing
+// rule whose only remote difference is the injected key keeps its prior state
+// (clean plan), while a null prior (import) adopts the full API value.
+func TestReconcileAlertRuleConfig(t *testing.T) {
+	prior, err := AnyToDynamic(map[string]any{
+		"settings": map[string]any{"usd_amount": float64(5000)},
+	})
+	require.NoError(t, err)
+
+	api := map[string]any{
+		"settings": map[string]any{
+			"usd_amount":         float64(5000),
+			"billing_account_id": "6832",
+		},
+	}
+
+	got, err := reconcileAlertRuleConfig(prior, api)
+	require.NoError(t, err)
+	assert.True(t, got.Equal(prior), "injected billing_account_id must not churn state; got %v", got)
+
+	// Import: null prior adopts the full API value (injected key included).
+	imported, err := reconcileAlertRuleConfig(types.DynamicNull(), api)
+	require.NoError(t, err)
+	assert.False(t, imported.IsNull(), "import must populate rule_config from the API value")
+}
+
 func TestOptionalString(t *testing.T) {
 	empty := ""
 	value := "critical"
