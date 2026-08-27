@@ -164,6 +164,19 @@ Generic transform for data transformations.
 - `description` (string, optional) - Description of the transform
 - `config` (dynamic, required) - Transform configuration (e.g. `jsondecode(...)` of an `operations` array)
 
+### monad_alert_rule
+
+Alert rule that watches pipelines (or the whole org) and fires on a condition.
+
+- `name` (string, required) - Name of the alert rule
+- `type` (string, required) - Alert rule type (e.g. `threshold-alert`); immutable — changing it forces replacement
+- `rule_config` (dynamic, required) - Type-specific configuration, validated by the API on write (e.g. `jsondecode(jsonencode({ settings = { ... } }))`)
+- `description` (string, optional) - Description of the alert rule
+- `severity` (string, required) - Severity; required, validated against `critical`, `high`, `medium`, `low`, `info`
+- `active` (bool, optional, computed) - Whether the rule is active; defaults to `true`
+- `pipeline_ids` (set of string, optional) - Pipelines the rule watches; omit for org-level alert types
+- `id` (string, computed) - Alert rule identifier
+
 ### monad_enrichment
 
 Generic enrichment connector for data enrichment.

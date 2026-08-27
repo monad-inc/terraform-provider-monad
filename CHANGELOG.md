@@ -45,6 +45,16 @@ compares a value, and modernizes the generated SDK the provider is built on.
 
 ### Added
 
+- **New resource `monad_alert_rule`** — manage alert rules as code alongside
+  pipelines, closing the gap where a pipeline could be fully GitOps-managed but
+  the alerting that watches it could not (it was clicked into the UI or POSTed by
+  hand, and silently lost on a rebuild). Supports create / read / update /
+  destroy / import. `type` is immutable and carries `RequiresReplace`; `rule_config`
+  is a free-form dynamic/JSON value (each alert type has its own settings schema,
+  validated by the API on write, exactly like `monad_transform.config`); update is
+  a full replace, so the provider always sends the complete desired state;
+  `pipeline_ids` is optional, so org-level alert types with no pipeline are valid.
+  (ENG-9549)
 - **The full condition rule vocabulary** on `edges.condition.conditions.config`:
   `values` (for `equals_any`), `pattern` (`matches_regex`), `percent` (`sample`),
   and the modifier flags `not` (every rule except `sample`), `case_insensitive`
