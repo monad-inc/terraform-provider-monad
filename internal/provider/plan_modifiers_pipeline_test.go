@@ -10,22 +10,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Regression guard for ENG-9572.
+// Regression guard for ENG-9573 (and, through it, ENG-9221 / ENG-9572).
 //
-// ENG-9221 attached order-insensitive plan modifiers to the pipeline `nodes`
-// and `edges` list blocks. They set the planned value to the prior state
-// whenever state and config held the same set in a different order, which is
-// not a legal plan: Terraform requires a plan-known attribute to equal the
-// config value at the same index. After `terraform import` — the very case
-// they were written for — state carries API order while config carries the
-// authored order, so every position where the two disagreed became
-// "Provider produced invalid plan", and destroy was blocked with it.
+// Pipeline topology is a graph: a node is identified by its slug, an edge by
+// its from/to pair, and the position of either in the HCL file carries no
+// meaning. Modelling `nodes`/`edges` as lists made index load-bearing, which
+// produced a spurious reorder diff after `terraform import` (ENG-9221); the
+// 0.3.0 attempt to hide that with an order-insensitive plan modifier pinned the
+// plan to state order, violating Terraform's rule that a plan-known value equal
+// config at the same index — every disagreeing position became "Provider
+// produced invalid plan" and blocked destroy (ENG-9572).
 //
-// The premise cannot be satisfied for a List. When config order and state
-// order differ, no single plan can be element-wise equal to config AND equal
-// to state. So these blocks must carry no plan modifier that rewrites element
-// order. If someone reattaches one, this fails.
-func TestPipelineListBlocksHaveNoOrderRewritingPlanModifiers(t *testing.T) {
+// Sets are the durable fix: Terraform compares them by element value, not
+// index, so a reorder is not a diff and no plan modifier is needed. If someone
+// reverts these blocks to lists — or reattaches an order-rewriting plan
+// modifier — this fails.
+func TestPipelineNodesAndEdgesAreSetBlocks(t *testing.T) {
 	ctx := context.Background()
 	r := NewResourcePipeline()
 
@@ -37,11 +37,11 @@ func TestPipelineListBlocksHaveNoOrderRewritingPlanModifiers(t *testing.T) {
 		blk, ok := resp.Schema.Blocks[name]
 		require.True(t, ok, "block %q missing from the pipeline schema", name)
 
-		lb, ok := blk.(schema.ListNestedBlock)
-		require.True(t, ok, "block %q is not a ListNestedBlock", name)
+		sb, ok := blk.(schema.SetNestedBlock)
+		require.Truef(t, ok, "block %q must be a SetNestedBlock, not a %T: element order "+
+			"is not semantically significant in a pipeline graph (ENG-9573)", blk, name)
 
-		assert.Empty(t, lb.PlanModifiers,
-			"block %q must not carry a list plan modifier: rewriting element order "+
-				"produces a plan that disagrees with config element-wise (ENG-9572)", name)
+		assert.Empty(t, sb.PlanModifiers,
+			"block %q must not carry an order-rewriting plan modifier (ENG-9572)", name)
 	}
 }

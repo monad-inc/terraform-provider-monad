@@ -235,3 +235,73 @@ func TestReconcilePipelineEdgesMasksOmittedNameDescription(t *testing.T) {
 		t.Error("expected genuine edge drift to be adopted")
 	}
 }
+
+// Under set semantics (ENG-9573) prior and API order need not agree. Matching
+// must be by identity, not position, so a pure reorder is not drift: every
+// prior element is preserved verbatim regardless of where it sits in the API
+// response, and the masked omitted fields on each are honored per-element.
+func TestReconcilePipelineNodesOrderInsensitive(t *testing.T) {
+	node := func(id string, slug types.String) ResourcePipelineNode {
+		return ResourcePipelineNode{
+			ComponentType: types.StringValue("input"),
+			ComponentID:   types.StringValue(id),
+			Slug:          slug,
+		}
+	}
+	prior := []ResourcePipelineNode{
+		node("c1", types.StringNull()),
+		node("c2", types.StringValue("kept")),
+	}
+	// API returns them in the opposite order, with a server-generated slug where
+	// the practitioner omitted one.
+	api := []ResourcePipelineNode{
+		node("c2", types.StringValue("kept")),
+		node("c1", types.StringValue("server-generated")),
+	}
+
+	got := reconcilePipelineNodes(prior, api)
+	byID := map[string]ResourcePipelineNode{}
+	for _, n := range got {
+		byID[n.ComponentID.ValueString()] = n
+	}
+	if !byID["c1"].Slug.IsNull() {
+		t.Errorf("expected c1 omitted slug preserved as null regardless of order, got %v", byID["c1"].Slug)
+	}
+	if byID["c2"].Slug.ValueString() != "kept" {
+		t.Errorf("expected c2 preserved verbatim, got %v", byID["c2"].Slug)
+	}
+}
+
+func TestReconcilePipelineEdgesOrderInsensitive(t *testing.T) {
+	edge := func(from, to string, name types.String) ResourcePipelineEdge {
+		return ResourcePipelineEdge{
+			Name:                 name,
+			Description:          types.StringNull(),
+			FromNodeInstanceSlug: types.StringValue(from),
+			ToNodeInstanceSlug:   types.StringValue(to),
+			Condition:            ResourcePipelineCondition{Operator: types.StringValue("and")},
+		}
+	}
+	prior := []ResourcePipelineEdge{
+		edge("a", "b", types.StringNull()),
+		edge("a", "c", types.StringValue("named")),
+	}
+	// API in the opposite order, echoing a server name where the practitioner
+	// omitted one.
+	api := []ResourcePipelineEdge{
+		edge("a", "c", types.StringValue("named")),
+		edge("a", "b", types.StringValue("server-name")),
+	}
+
+	got := reconcilePipelineEdges(prior, api)
+	byKey := map[string]ResourcePipelineEdge{}
+	for _, e := range got {
+		byKey[pipelineEdgeKey(e)] = e
+	}
+	if !byKey["a->b"].Name.IsNull() {
+		t.Errorf("expected a->b omitted name preserved as null regardless of order, got %v", byKey["a->b"].Name)
+	}
+	if byKey["a->c"].Name.ValueString() != "named" {
+		t.Errorf("expected a->c preserved verbatim, got %v", byKey["a->c"].Name)
+	}
+}

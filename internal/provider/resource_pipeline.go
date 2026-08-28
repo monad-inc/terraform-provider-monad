@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"sort"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -122,8 +121,11 @@ func (r *ResourcePipeline) Schema(
 	resp.Schema = schema.Schema{
 		MarkdownDescription: "Monad Pipeline",
 		// v1 (ENG-9546): edge condition `config.value` changed from a list of
-		// strings to a single string. See resource_pipeline_upgrade.go.
-		Version: 1,
+		// strings to a single string.
+		// v2 (ENG-9573): `nodes` and `edges` changed from list blocks to set
+		// blocks so element order stops being semantically significant.
+		// See resource_pipeline_upgrade.go for both upgraders.
+		Version: 2,
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
@@ -155,10 +157,12 @@ func (r *ResourcePipeline) Schema(
 			},
 		},
 		Blocks: map[string]schema.Block{
-			"nodes": schema.ListNestedBlock{
-				MarkdownDescription: "List of nodes in the pipeline",
-				// Deliberately NO order-insensitive plan modifier here — see the
-				// note on "edges" below (ENG-9572).
+			"nodes": schema.SetNestedBlock{
+				// A set, not a list (ENG-9573): node order in HCL is not
+				// semantically significant. See the note on "edges" below.
+				MarkdownDescription: "Set of nodes in the pipeline. Node order in " +
+					"HCL is not significant; a node is identified by its slug " +
+					"and its component, never its position.",
 				NestedObject: schema.NestedBlockObject{
 					Attributes: map[string]schema.Attribute{
 						"component_type": schema.StringAttribute{
@@ -176,27 +180,34 @@ func (r *ResourcePipeline) Schema(
 					},
 				},
 			},
-			"edges": schema.ListNestedBlock{
-				MarkdownDescription: "List of edges in the pipeline",
-				// Deliberately NO order-insensitive plan modifier.
+			"edges": schema.SetNestedBlock{
+				MarkdownDescription: "Set of edges in the pipeline. Edge order in " +
+					"HCL is not significant; an edge is identified by its " +
+					"`from_node_instance_slug`/`to_node_instance_slug` pair, " +
+					"never its position. Two edges identical in every attribute " +
+					"collapse into one set element.",
+				// A set, not a list, because pipeline topology is a graph:
+				// reordering edges in HCL carries no meaning. Terraform compares
+				// sets by element value rather than index, so a reorder is not a
+				// diff and no plan modifier is needed to pretend otherwise.
 				//
-				// ENG-9221 added one that set the planned value to the prior
-				// state whenever state and config held the same edge set in a
-				// different order, to suppress the reorder diff after
-				// `terraform import`. That is not a legal plan: Terraform
-				// requires a plan-known attribute to equal the config value at
-				// the SAME index, so pinning the plan to state order made every
-				// position where the orders disagreed an error —
-				// "Provider produced invalid plan" — which also blocked
-				// destroy (ENG-9572).
+				// This is the durable fix for the import-ordering saga. A list
+				// made index load-bearing: after `terraform import`, state
+				// carried API order while config carried authored order, which
+				// showed a spurious reorder diff (ENG-9221). The 0.3.0 attempt
+				// to hide that with an order-insensitive plan modifier pinned the
+				// plan to state order, violating Terraform's rule that a
+				// plan-known value equal config at the same index — every
+				// disagreeing position became "Provider produced invalid plan"
+				// and blocked destroy (ENG-9572). For a list the premise is
+				// unsatisfiable; sets remove the dilemma rather than trading
+				// between its horns.
 				//
-				// The premise is unsatisfiable for a List: when config order
-				// and state order differ, no single plan can equal config
-				// element-wise AND equal state, so a reorder diff after import
-				// is unavoidable here. It is cosmetic and one-time — a single
-				// apply normalizes it — which is strictly better than a hard
-				// error. Modelling nodes/edges as Sets, which is what they
-				// semantically are, is the real fix and is tracked separately.
+				// Because `to_node_instance_slug` is a node's single incoming
+				// edge, the from/to pair is unique, so no two legitimate edges
+				// collapse into one set element. Two edges identical in every
+				// attribute WOULD collapse — an unexpressible duplicate,
+				// documented in CHANGELOG.md.
 				NestedObject: schema.NestedBlockObject{
 					Attributes: map[string]schema.Attribute{
 						"name": schema.StringAttribute{
@@ -486,22 +497,24 @@ func (r *ResourcePipeline) Read(
 
 	// Reconcile nodes/edges for drift without reintroducing the perpetual diffs
 	// that motivated preserving them: the API assigns node-instance ids, may
-	// generate slugs the practitioner omitted, echoes nullable edge
-	// name/description, and returns nodes/edges in server order. We rebuild the
-	// API view (mapping node-instance ids back to config slugs, sorted to the
-	// prior order), then keep the prior state verbatim when it is semantically
-	// equal — masking server-populated fields the practitioner left null so
-	// they never read as drift. On import prior state is empty, so the API view
-	// populates. Only genuine topology drift is written back.
-	data.Nodes = reconcilePipelineNodes(data.Nodes, buildPipelineStateNodes(pipeline, data.Nodes))
-	data.Edges = reconcilePipelineEdges(data.Edges, buildPipelineStateEdges(pipeline, data.Edges))
+	// generate slugs the practitioner omitted, and echoes nullable edge
+	// name/description. We rebuild the API view (mapping node-instance ids back
+	// to config slugs), then keep the prior state element verbatim when it is
+	// semantically equal — matching by identity, not position, and masking
+	// server-populated fields the practitioner left null so they never read as
+	// drift. Because nodes/edges are sets (ENG-9573), server order is
+	// irrelevant, so no sort is needed. On import prior state is empty, so the
+	// API view populates. Only genuine topology drift is written back.
+	data.Nodes = reconcilePipelineNodes(data.Nodes, buildPipelineStateNodes(pipeline))
+	data.Edges = reconcilePipelineEdges(data.Edges, buildPipelineStateEdges(pipeline))
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-// buildPipelineStateNodes reconstructs the node list from an API response,
-// mapped into the Terraform model and sorted to match the prior config order.
-func buildPipelineStateNodes(pipeline *monad.ModelsPipelineConfigV2, priorNodes []ResourcePipelineNode) []ResourcePipelineNode {
+// buildPipelineStateNodes reconstructs the node set from an API response,
+// mapped into the Terraform model. Order is not significant (nodes are a set),
+// so the API order is returned as-is; reconcilePipelineNodes matches by identity.
+func buildPipelineStateNodes(pipeline *monad.ModelsPipelineConfigV2) []ResourcePipelineNode {
 	nodes := make([]ResourcePipelineNode, len(pipeline.Nodes))
 	for i, node := range pipeline.Nodes {
 		slug := types.StringNull()
@@ -514,13 +527,13 @@ func buildPipelineStateNodes(pipeline *monad.ModelsPipelineConfigV2, priorNodes 
 			Slug:          slug,
 		}
 	}
-	sortNodesByConfigOrder(nodes, priorNodes)
 	return nodes
 }
 
-// buildPipelineStateEdges reconstructs the edge list from an API response,
-// resolving node-instance ids back to config slugs and sorting to prior order.
-func buildPipelineStateEdges(pipeline *monad.ModelsPipelineConfigV2, priorEdges []ResourcePipelineEdge) []ResourcePipelineEdge {
+// buildPipelineStateEdges reconstructs the edge set from an API response,
+// resolving node-instance ids back to config slugs. Order is not significant
+// (edges are a set); reconcilePipelineEdges matches by identity.
+func buildPipelineStateEdges(pipeline *monad.ModelsPipelineConfigV2) []ResourcePipelineEdge {
 	edges := make([]ResourcePipelineEdge, len(pipeline.Edges))
 	for i, edge := range pipeline.Edges {
 		name := types.StringNull()
@@ -567,7 +580,6 @@ func buildPipelineStateEdges(pipeline *monad.ModelsPipelineConfigV2, priorEdges 
 			},
 		}
 	}
-	sortEdgesByConfigOrder(edges, priorEdges)
 	return edges
 }
 
@@ -580,114 +592,95 @@ func getSlugForNodeID(nodes []monad.ModelsPipelineNode, nodeID string) string {
 	return ""
 }
 
-func sortNodesByConfigOrder(nodes []ResourcePipelineNode, configNodes []ResourcePipelineNode) {
-	configOrder := make(map[string]int)
-	for i, node := range configNodes {
-		configOrder[node.ComponentID.ValueString()] = i
-	}
-
-	sort.SliceStable(nodes, func(i, j int) bool {
-		orderI, okI := configOrder[nodes[i].ComponentID.ValueString()]
-		orderJ, okJ := configOrder[nodes[j].ComponentID.ValueString()]
-
-		if okI && okJ {
-			return orderI < orderJ
-		}
-		if okI {
-			return true
-		}
-		if okJ {
-			return false
-		}
-		return nodes[i].ComponentID.ValueString() < nodes[j].ComponentID.ValueString()
-	})
+// pipelineEdgeKey identifies an edge by its routing endpoints. This is the
+// edge's identity under set semantics (ENG-9573): `to_node_instance_slug` is a
+// node's single incoming edge, so the from/to pair is unique across a pipeline.
+func pipelineEdgeKey(e ResourcePipelineEdge) string {
+	return e.FromNodeInstanceSlug.ValueString() + "->" + e.ToNodeInstanceSlug.ValueString()
 }
 
-func sortEdgesByConfigOrder(edges []ResourcePipelineEdge, configEdges []ResourcePipelineEdge) {
-	edgeKey := func(e ResourcePipelineEdge) string {
-		return e.FromNodeInstanceSlug.ValueString() + "->" + e.ToNodeInstanceSlug.ValueString()
-	}
-
-	configOrder := make(map[string]int)
-	for i, edge := range configEdges {
-		configOrder[edgeKey(edge)] = i
-	}
-
-	sort.SliceStable(edges, func(i, j int) bool {
-		keyI := edgeKey(edges[i])
-		keyJ := edgeKey(edges[j])
-		orderI, okI := configOrder[keyI]
-		orderJ, okJ := configOrder[keyJ]
-
-		if okI && okJ {
-			return orderI < orderJ
-		}
-		if okI {
-			return true
-		}
-		if okJ {
-			return false
-		}
-		return keyI < keyJ
-	})
-}
-
-// reconcilePipelineNodes keeps the prior state node list when it is
-// semantically equal to the API-derived list, so genuine drift surfaces while
+// reconcilePipelineNodes keeps each prior-state node verbatim when it is
+// semantically equal to the API-derived node, so genuine drift surfaces while
 // the practitioner-authored representation (including omitted, server-generated
-// slugs) is preserved. Slugs the practitioner left null are masked out of the
-// comparison so the server-assigned value never reads as drift.
+// slugs) is preserved. Nodes are a set, so prior and API are matched by
+// identity (component id), never by position; slugs the practitioner left null
+// are masked so the server-assigned value never reads as drift. On import prior
+// is empty and the API view populates.
 func reconcilePipelineNodes(prior, api []ResourcePipelineNode) []ResourcePipelineNode {
 	if len(prior) == 0 {
 		return api
 	}
 
-	priorSlugNull := make(map[string]bool, len(prior))
+	priorByID := make(map[string]ResourcePipelineNode, len(prior))
 	for _, n := range prior {
-		priorSlugNull[n.ComponentID.ValueString()] = n.Slug.IsNull()
+		priorByID[n.ComponentID.ValueString()] = n
 	}
 
-	masked := make([]ResourcePipelineNode, len(api))
+	out := make([]ResourcePipelineNode, len(api))
 	for i, n := range api {
-		if priorSlugNull[n.ComponentID.ValueString()] {
+		p, ok := priorByID[n.ComponentID.ValueString()]
+		if ok && p.Slug.IsNull() {
 			n.Slug = types.StringNull()
 		}
-		masked[i] = n
+		if ok && nodesSemanticallyEqual(p, n) {
+			out[i] = p
+		} else {
+			out[i] = n
+		}
 	}
-
-	if reflect.DeepEqual(jsonNormalize(pipelineNodesComparable(prior)), jsonNormalize(pipelineNodesComparable(masked))) {
-		return prior
-	}
-	return api
+	return out
 }
 
-// reconcilePipelineEdges mirrors reconcilePipelineNodes for edges. Nullable
-// edge name/description that the practitioner omitted are masked so the
-// server-echoed values do not read as drift. Edges are matched positionally,
-// both lists having been sorted to the prior config order.
+// reconcilePipelineEdges mirrors reconcilePipelineNodes for edges, matched by
+// identity (the from/to pair) rather than position. Nullable edge
+// name/description the practitioner omitted are masked so the server-echoed
+// values do not read as drift.
 func reconcilePipelineEdges(prior, api []ResourcePipelineEdge) []ResourcePipelineEdge {
 	if len(prior) == 0 {
 		return api
 	}
 
-	masked := make([]ResourcePipelineEdge, len(api))
-	copy(masked, api)
-	for i := range masked {
-		if i >= len(prior) {
-			break
-		}
-		if prior[i].Name.IsNull() {
-			masked[i].Name = types.StringNull()
-		}
-		if prior[i].Description.IsNull() {
-			masked[i].Description = types.StringNull()
-		}
+	priorByKey := make(map[string]ResourcePipelineEdge, len(prior))
+	for _, e := range prior {
+		priorByKey[pipelineEdgeKey(e)] = e
 	}
 
-	if reflect.DeepEqual(jsonNormalize(pipelineEdgesComparable(prior)), jsonNormalize(pipelineEdgesComparable(masked))) {
-		return prior
+	out := make([]ResourcePipelineEdge, len(api))
+	for i, e := range api {
+		p, ok := priorByKey[pipelineEdgeKey(e)]
+		if ok {
+			if p.Name.IsNull() {
+				e.Name = types.StringNull()
+			}
+			if p.Description.IsNull() {
+				e.Description = types.StringNull()
+			}
+		}
+		if ok && edgesSemanticallyEqual(p, e) {
+			out[i] = p
+		} else {
+			out[i] = e
+		}
 	}
-	return api
+	return out
+}
+
+// nodesSemanticallyEqual / edgesSemanticallyEqual compare a single prior and
+// API element through the same prune/normalize path used elsewhere, so an
+// explicit "" the API dropped via omitempty compares equal to the omitted
+// field (see pruneEmpty).
+func nodesSemanticallyEqual(a, b ResourcePipelineNode) bool {
+	return reflect.DeepEqual(
+		jsonNormalize(pipelineNodesComparable([]ResourcePipelineNode{a})),
+		jsonNormalize(pipelineNodesComparable([]ResourcePipelineNode{b})),
+	)
+}
+
+func edgesSemanticallyEqual(a, b ResourcePipelineEdge) bool {
+	return reflect.DeepEqual(
+		jsonNormalize(pipelineEdgesComparable([]ResourcePipelineEdge{a})),
+		jsonNormalize(pipelineEdgesComparable([]ResourcePipelineEdge{b})),
+	)
 }
 
 func pipelineNodesComparable(nodes []ResourcePipelineNode) []any {
