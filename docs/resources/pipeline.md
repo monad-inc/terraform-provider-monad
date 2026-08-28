@@ -22,9 +22,9 @@ Monad Pipeline
 ### Optional
 
 - `description` (String) Description of the pipeline
-- `edges` (Block List) List of edges in the pipeline (see [below for nested schema](#nestedblock--edges))
+- `edges` (Block Set) Set of edges in the pipeline. Edge order in HCL is not significant; an edge is identified by its `from_node_instance_slug`/`to_node_instance_slug` pair, never its position. Two edges identical in every attribute collapse into one set element. (see [below for nested schema](#nestedblock--edges))
 - `enabled` (Boolean) Whether the pipeline is enabled
-- `nodes` (Block List) List of nodes in the pipeline (see [below for nested schema](#nestedblock--nodes))
+- `nodes` (Block Set) Set of nodes in the pipeline. Node order in HCL is not significant; a node is identified by its slug and its component, never its position. (see [below for nested schema](#nestedblock--nodes))
 
 ### Read-Only
 

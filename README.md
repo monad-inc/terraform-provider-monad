@@ -129,8 +129,8 @@ Manages data pipelines that connect inputs to outputs with conditional logic.
 - `name` (string, required) - Name of the pipeline
 - `description` (string, optional) - Description of the pipeline
 - `enabled` (bool, optional) - Whether the pipeline is enabled (defaults to true)
-- `nodes` (block list) - Pipeline nodes configuration
-- `edges` (block list) - Pipeline edge connections
+- `nodes` (block set) - Pipeline nodes configuration (order not significant)
+- `edges` (block set) - Pipeline edge connections (order not significant)
 
 ### monad_input
 

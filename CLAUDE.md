@@ -222,9 +222,12 @@ description). Always live-verify anything touching Create/Update/Read/ModifyPlan
    - `destroy` → everything removed cleanly.
 6. **Always `terraform destroy` and clean up** test resources afterward.
 
-Known non-defect to expect: `monad_pipeline` **import** populates correctly but
-the first post-import `apply` may show a one-time diff (edge ordering /
-`enabled`) because Read can't see the practitioner's HCL on import. Intermittent
+`monad_pipeline` **import** is now followed by a clean `No changes` plan: as of
+ENG-9573 `nodes`/`edges` are **sets**, so their order is not compared and the
+one-time post-import reorder diff is gone (and `enabled` is Optional+Computed, so
+it no longer churns either). If an import shows a `nodes`/`edges` diff, that is a
+real regression — a set element genuinely differs — not the old cosmetic
+ordering artifact; investigate it rather than dismissing it. Intermittent
 **500s** on pipeline update/delete on a busy org are transient API flakiness —
 retry before concluding it's a provider bug (compare the request payload to
 `main` to confirm it's byte-identical).

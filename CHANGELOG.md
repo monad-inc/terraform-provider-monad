@@ -6,9 +6,12 @@ breaking changes are released as minor version bumps.
 
 ## Unreleased
 
-Contains a breaking change (edge condition `config.value`) — see below. It fixes
-conditional edge routing, which did not work through Terraform for any rule that
-compares a value, and modernizes the generated SDK the provider is built on.
+Contains two breaking changes (edge condition `config.value`, and `nodes` /
+`edges` becoming sets) — see below. It fixes conditional edge routing, which did
+not work through Terraform for any rule that compares a value; makes pipeline
+node/edge order stop being load-bearing, which resolves the `terraform import`
+plan-diff saga for good; and modernizes the generated SDK the provider is built
+on.
 
 ### Fixed
 
@@ -89,19 +92,38 @@ compares a value, and modernizes the generated SDK the provider is built on.
   Every configuration this breaks is one that was already silently routing
   nothing, so the failure surfaces as an error where it used to be invisible.
 
+- **`nodes` and `edges` are now sets, not lists.** Pipeline topology is a graph:
+  a node is identified by its slug, an edge by its `from`/`to` pair, and the
+  position of either in the HCL file carries no meaning. Modelling them as lists
+  made index load-bearing, which is what produced the `terraform import` plan
+  diff (a list forces state's API order and config's authored order to disagree
+  by index) and then the `Provider produced invalid plan` error when 0.3.0 tried
+  to hide that. Sets remove the dilemma: Terraform compares them by element
+  value, not index, so reordering is not a diff and import is followed by a clean
+  plan — no normalizing apply, no invalid plan, no order-rewriting plan modifier.
+
+  **Migration:**
+  - **No configuration change is required, and no re-import.** State migrates
+    automatically (schema version 1 → 2): the stored `nodes` / `edges` lists are
+    re-encoded as sets. Reordering the blocks in HCL no longer shows a diff.
+  - **Positional references stop working.** A set element cannot be addressed by
+    index, so any expression like `monad_pipeline.x.edges[0]` must be rewritten
+    to select by value (e.g. a `for`/`one()` expression keyed on
+    `to_node_instance_slug`). Most configurations use neither.
+  - **Duplicate edges are unexpressible.** Two edges identical in every attribute
+    collapse into a single set element. This is not a real limitation — a node
+    has exactly one incoming edge, so a `from`/`to` pair is unique and the API
+    rejects a duplicate anyway — but it is now enforced by the schema.
+
 ### Changed
 
-- **A one-time reorder diff after `terraform import` is expected again.** This
-  is the 0.3.0 ENG-9221 behavior reverting, deliberately: an imported pipeline
-  may show a `nodes` / `edges` reordering on the first plan. A single `apply`
-  normalizes it and later plans are clean. Trading a cosmetic one-time diff for
-  a hard error that also blocked `destroy` is the right side of that trade, and
-  it is what 0.2.0 documented under known issues.
-
-  The durable fix is to model `nodes` and `edges` as **sets** rather than
-  lists — order genuinely is not meaningful — which removes the reorder diff
-  without lying to Terraform. That is a breaking schema change and is tracked
-  separately.
+- **The `terraform import` plan diff is gone.** Importing a `monad_pipeline` —
+  including one with named or conditional edges — is now followed by a clean
+  `No changes` plan. This supersedes the 0.3.x behavior, where an imported
+  pipeline showed a one-time `nodes` / `edges` reorder diff (0.3.1, after the
+  ENG-9572 revert) or failed with an invalid plan (0.3.0). The set migration
+  above is what removes it; the order-insensitive plan modifiers those releases
+  relied on are gone and are not needed.
 - **Modernized the generated Monad Go SDK pin** from `v0.0.0-20250711173942`
   (2025-07-11) to `v0.0.0-20260710180932` (2026-07-10). The old pin predated
   the API's operation-id sweep, so every SDK call site used a path-derived name
