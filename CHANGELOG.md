@@ -4,7 +4,7 @@ All notable changes to this provider are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/). While the provider is pre-1.0,
 breaking changes are released as minor version bumps.
 
-## Unreleased
+## 0.4.0
 
 Contains two breaking changes (edge condition `config.value`, and `nodes` /
 `edges` becoming sets) — see below. It fixes conditional edge routing, which did
