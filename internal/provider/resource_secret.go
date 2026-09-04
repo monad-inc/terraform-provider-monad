@@ -19,6 +19,7 @@ import (
 var _ resource.Resource = &ResourceSecret{}
 var _ resource.ResourceWithConfigure = &ResourceSecret{}
 var _ resource.ResourceWithImportState = &ResourceSecret{}
+var _ resource.ResourceWithModifyPlan = &ResourceSecret{}
 
 type ResourceSecret struct {
 	client *client.Client
@@ -93,14 +94,20 @@ func (r *ResourceSecret) Schema(
 				Optional:            true,
 			},
 			"value": schema.StringAttribute{
-				MarkdownDescription: "Value of the secret",
-				Required:            true,
-				Sensitive:           true,
-				WriteOnly:           true,
+				MarkdownDescription: "Value of the secret. Write-only: sent to the Monad API " +
+					"but never stored in Terraform state.",
+				Required:  true,
+				Sensitive: true,
+				WriteOnly: true,
 			},
 			"value_hash": schema.StringAttribute{
-				MarkdownDescription: "HMAC hash of the secret value",
-				Computed:            true,
+				MarkdownDescription: "HMAC fingerprint of `value`, used to detect a rotated " +
+					"secret. Changing `value` marks this unknown at plan and sends the " +
+					"new value on apply.",
+				Computed: true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}
@@ -144,6 +151,9 @@ func (r *ResourceSecret) Create(
 		return
 	}
 
+	// Only the computed id is taken from the response; name/description stay
+	// as planned (apply consistency, see CLAUDE.md). The write-only value is
+	// fingerprinted so a later rotation is detectable (ModifyPlan).
 	data.ID = types.StringValue(*secret.Id)
 	data.ValueHash = types.StringValue(r.computeValueHash(ctx, data.Value.ValueString()))
 
@@ -192,7 +202,10 @@ func (r *ResourceSecret) Read(
 
 	data.ID = types.StringValue(*secret.Id)
 	data.Name = types.StringValue(*secret.Name)
-	data.Description = types.StringValue(*secret.Description)
+	// The API echoes an unset description as ""; an omitted attribute is null
+	// in config. Storing "" here produced a spurious `"" -> null` update on the
+	// next plan and then an inconsistent-result error on apply (ENG-9867).
+	data.Description = reconcileOptionalString(data.Description, secret.Description)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -209,10 +222,24 @@ func (r *ResourceSecret) Update(
 		return
 	}
 
+	// `value` is write-only, so it is null in the plan; the configuration is
+	// the only place it is available. Reading it from the plan sent an empty
+	// value, which the API treats as "keep the current ciphertext" — so a
+	// value-only change never reached Monad (ENG-9235).
+	var value types.String
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("value"), &value)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// The API preserves an omitted description on PATCH, so a description
+	// removed from the configuration (null) must be sent as "" to clear it —
+	// otherwise the server keeps the old text and every later plan re-diffs it.
+	description := data.Description.ValueString()
 	request := monad.RoutesV2CreateOrUpdateSecretRequest{
 		Name:        data.Name.ValueStringPointer(),
-		Description: data.Description.ValueStringPointer(),
-		Value:       data.Value.ValueStringPointer(),
+		Description: &description,
+		Value:       value.ValueStringPointer(),
 	}
 
 	secret, monadResp, err := r.client.SecretsAPI.
@@ -235,14 +262,65 @@ func (r *ResourceSecret) Update(
 		return
 	}
 
+	// Preserve plan-known name/description; only the computed id comes from
+	// the response. Echoing the API's description back ("" for an unset one)
+	// is what tripped "produced inconsistent result after apply" (ENG-9867).
 	data.ID = types.StringValue(*secret.Id)
-	data.Name = types.StringValue(*secret.Name)
-	data.Description = types.StringValue(*secret.Description)
-	data.ValueHash = types.StringValue(r.computeValueHash(ctx, data.Value.ValueString()))
+	data.ValueHash = types.StringValue(r.computeValueHash(ctx, value.ValueString()))
 
 	tflog.Trace(ctx, "updated a secret resource")
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// ModifyPlan detects a rotated `value`. Write-only values are null in state
+// and in the plan, so a change to `value` alone produces no diff and Update
+// would never run (ENG-9235). Mirroring modifyConnectorPlanForSecrets, it
+// compares a fresh fingerprint of the configured value against the stored
+// `value_hash` and, on a mismatch, marks `value_hash` unknown — which both
+// triggers Update and lets Update store the new hash without an
+// apply-consistency violation (an unknown planned value accepts any final
+// value).
+func (r *ResourceSecret) ModifyPlan(
+	ctx context.Context,
+	req resource.ModifyPlanRequest,
+	resp *resource.ModifyPlanResponse,
+) {
+	if r.client == nil {
+		return
+	}
+	// No prior state means a create; the hash is computed in Create.
+	if req.State.Raw.IsNull() {
+		return
+	}
+	// A planned destroy has a null plan; nothing to reconcile.
+	if req.Plan.Raw.IsNull() {
+		return
+	}
+
+	hashPath := path.Root("value_hash")
+
+	var value types.String
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("value"), &value)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	// A value not known until apply (e.g. derived from another resource) may
+	// or may not be a rotation; plan the update so Update can decide.
+	if value.IsUnknown() {
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, hashPath, types.StringUnknown())...)
+		return
+	}
+
+	var stateHash types.String
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, hashPath, &stateHash)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if r.computeValueHash(ctx, value.ValueString()) != stateHash.ValueString() {
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, hashPath, types.StringUnknown())...)
+	}
 }
 
 func (r *ResourceSecret) Delete(

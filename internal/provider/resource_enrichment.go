@@ -221,10 +221,7 @@ func (r *ResourceEnrichment) Read(
 		return
 	}
 
-	description := types.StringNull()
-	if enrichment.Description != nil && *enrichment.Description != "" {
-		description = types.StringValue(*enrichment.Description)
-	}
+	description := reconcileOptionalString(data.Description, enrichment.Description)
 
 	data.ID = types.StringValue(*enrichment.Id)
 	data.Name = types.StringValue(*enrichment.Name)

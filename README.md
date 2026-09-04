@@ -120,7 +120,7 @@ Manages organization secrets that can be referenced by other resources.
 - `name` (string, required) - Name of the secret
 - `description` (string, optional) - Description of the secret
 - `value` (string, required, sensitive, write-only) - Secret value. Write-only: sent to the Monad API but never stored in Terraform state.
-- `value_hash` (string, computed) - HMAC fingerprint of `value`, used to detect changes.
+- `value_hash` (string, computed) - HMAC fingerprint of `value`, used to detect a rotated secret. Changing `value` marks it unknown at plan and sends the new value on apply.
 
 ### monad_pipeline
 

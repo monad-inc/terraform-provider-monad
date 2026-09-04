@@ -4,6 +4,51 @@ All notable changes to this provider are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/). While the provider is pre-1.0,
 breaking changes are released as minor version bumps.
 
+## Unreleased
+
+### Fixed
+
+- **`monad_secret` no longer fails every apply after the first with
+  `Provider produced inconsistent result after apply` (`.description: was null,
+  but now cty.StringVal("")`).** The API echoes an unset description as `""`,
+  and Read stored that verbatim, so a secret declared without `description`
+  showed a spurious update on the next plan; Update then copied the API's `""`
+  back into state, which Terraform rejected. The error aborted the run and
+  blocked every resource referencing the secret. Read now maps an API `""` to
+  null when the configuration omits `description`, and keeps `""` when the
+  configuration says `description = ""` — so the documented workaround stays
+  stable and can be removed at leisure. Update keeps the planned
+  `name`/`description` instead of the response's. (ENG-9867)
+
+  The same `""`-vs-null reconciliation now applies to `description` on
+  `monad_input`, `monad_output`, `monad_enrichment`, `monad_transform` and
+  `monad_pipeline`, which mapped `""` to null unconditionally and so would have
+  churned on an explicit `description = ""`.
+
+- **Removing `description` from a `monad_secret` now clears it on the server.**
+  The API preserves an omitted description on update, and the provider omitted
+  it when the attribute was null, so the old text survived and every later plan
+  showed the same `-> null` diff. Update now sends an explicit `""`.
+
+- **Changing only `monad_secret.value` now updates the secret.** `value` is
+  write-only, so it is null in state and in the plan and could not produce a
+  diff on its own — a value-only change planned as `No changes` and Update never
+  ran. When Update did run (for a name or description change) it read `value`
+  from the plan, where a write-only value is always null, so the API received an
+  empty value and kept the old ciphertext while the provider recorded the hash
+  of `""`. The resource now has a `ModifyPlan` that fingerprints the configured
+  value and, when it differs from the stored `value_hash`, marks the hash unknown
+  so Update runs; Update reads `value` from the configuration. `value_hash`
+  gained `UseStateForUnknown`, so an unchanged value no longer shows
+  `(known after apply)` on unrelated updates. (ENG-9235)
+
+  Secrets last applied with 0.4.0 or earlier carry a `value_hash` of the empty
+  string; the first plan on this version shows a one-time `value_hash` update
+  that re-sends the configured value and records the correct hash. After
+  `terraform import` of a `monad_secret` the first plan is the same one-time
+  update — the API never returns secret material, so the provider cannot confirm
+  the imported secret already holds the configured value.
+
 ## 0.4.0
 
 Contains two breaking changes (edge condition `config.value`, and `nodes` /
