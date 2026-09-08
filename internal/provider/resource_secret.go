@@ -205,7 +205,7 @@ func (r *ResourceSecret) Read(
 	// The API echoes an unset description as ""; an omitted attribute is null
 	// in config. Storing "" here produced a spurious `"" -> null` update on the
 	// next plan and then an inconsistent-result error on apply (ENG-9867).
-	data.Description = reconcileOptionalString(data.Description, secret.Description)
+	data.Description = reconcileOptionalString(data.Description, secret.GetDescription())
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

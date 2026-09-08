@@ -205,7 +205,7 @@ func (r *ResourceTransform) Read(
 		return
 	}
 
-	description := reconcileOptionalString(data.Description, transform.Description)
+	description := reconcileOptionalString(data.Description, transform.GetDescription())
 
 	data.ID = types.StringValue(*transform.Id)
 	data.Name = types.StringValue(*transform.Name)

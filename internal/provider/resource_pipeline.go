@@ -478,7 +478,7 @@ func (r *ResourcePipeline) Read(
 		return
 	}
 
-	description := reconcileOptionalString(data.Description, pipeline.Description)
+	description := reconcileOptionalString(data.Description, pipeline.GetDescription())
 
 	data.ID = types.StringValue(*pipeline.Id)
 	data.Name = types.StringValue(*pipeline.Name)

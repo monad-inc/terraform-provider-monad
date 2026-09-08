@@ -16,13 +16,15 @@ import (
 )
 
 // TestReconcileOptionalString covers the ""/null reconciliation for Optional
-// string scalars refreshed from the API (ENG-9867): the API echoes an unset
-// description as "", but an omitted attribute is null in the plan, so Read
+// string scalars refreshed from the API (ENG-9867): the SDK getters yield "" for an
+// unset description, but an omitted attribute is null in the plan, so Read
 // must not store a value the plan never carried — while an explicit
 // `description = ""` in config must keep round-tripping as "".
 func TestReconcileOptionalString(t *testing.T) {
-	empty := ""
-	set := "a description"
+	const (
+		empty = ""
+		set   = "a description"
+	)
 
 	null := types.StringNull()
 	blank := types.StringValue("")
@@ -31,17 +33,16 @@ func TestReconcileOptionalString(t *testing.T) {
 	cases := []struct {
 		name  string
 		prior types.String
-		api   *string
+		api   string
 		want  types.String
 	}{
-		{"nil pointer, null prior", null, nil, null},
-		{"empty, null prior", null, &empty, null},
-		{"empty, unknown prior (import)", types.StringUnknown(), &empty, null},
-		{"empty, explicit \"\" prior stays \"\"", blank, &empty, blank},
-		{"empty, prior had text (cleared out-of-band)", other, &empty, null},
-		{"set, null prior", null, &set, types.StringValue(set)},
-		{"set, prior had other text", other, &set, types.StringValue(set)},
-		{"set, prior blank", blank, &set, types.StringValue(set)},
+		{"empty, null prior", null, empty, null},
+		{"empty, unknown prior (import)", types.StringUnknown(), empty, null},
+		{"empty, explicit \"\" prior stays \"\"", blank, empty, blank},
+		{"empty, prior had text (cleared out-of-band)", other, empty, null},
+		{"set, null prior", null, set, types.StringValue(set)},
+		{"set, prior had other text", other, set, types.StringValue(set)},
+		{"set, prior blank", blank, set, types.StringValue(set)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
