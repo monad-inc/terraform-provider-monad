@@ -168,10 +168,7 @@ func (r *ResourceOutput) Read(
 		return
 	}
 
-	description := types.StringNull()
-	if output.Description != nil && *output.Description != "" {
-		description = types.StringValue(*output.Description)
-	}
+	description := reconcileOptionalString(data.Description, output.GetDescription())
 
 	data.ID = types.StringValue(*output.Id)
 	data.Name = types.StringValue(*output.Name)

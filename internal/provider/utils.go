@@ -70,6 +70,27 @@ func hmacSHA256Hex(ctx context.Context, key, value string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// reconcileOptionalString refreshes an Optional string scalar from the API
+// without introducing a diff the practitioner never authored. api is the plain
+// string value as returned by the SDK's nil-safe getters (e.g.
+// GetDescription()), which yield "" both for an absent field and for one the
+// API echoed as "". An omitted attribute is null in config and plan, so an API
+// "" maps to null — unless prior state already holds "", meaning the
+// practitioner wrote `description = ""` explicitly, in which case "" is kept so
+// the two stay equal. Without the first rule Read stored "" against a null
+// plan, which surfaced as a spurious `"" -> null` update and then a "Provider
+// produced inconsistent result after apply" (ENG-9867); without the second an
+// explicit "" would churn on every plan.
+func reconcileOptionalString(prior types.String, api string) types.String {
+	if api == "" {
+		if !prior.IsNull() && !prior.IsUnknown() && prior.ValueString() == "" {
+			return prior
+		}
+		return types.StringNull()
+	}
+	return types.StringValue(api)
+}
+
 // secretsHashKey returns the HMAC key used to fingerprint write-only secret
 // values. It prefers MONAD_SECRETS_KEY, falling back to the organization ID.
 // Keeping the key out of state means the stored hash cannot be brute-forced

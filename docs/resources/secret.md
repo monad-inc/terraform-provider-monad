@@ -20,7 +20,7 @@ Monad Secret
 > **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
 
 - `name` (String) Name of the secret
-- `value` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Value of the secret
+- `value` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Value of the secret. Write-only: sent to the Monad API but never stored in Terraform state.
 
 ### Optional
 
@@ -29,4 +29,4 @@ Monad Secret
 ### Read-Only
 
 - `id` (String) Secret identifier
-- `value_hash` (String) HMAC hash of the secret value
+- `value_hash` (String) HMAC fingerprint of `value`, used to detect a rotated secret. Changing `value` marks this unknown at plan and sends the new value on apply.
