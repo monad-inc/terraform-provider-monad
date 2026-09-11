@@ -56,7 +56,11 @@ func TestReconcileOptionalString(t *testing.T) {
 // only ever set in state/plan.
 func secretValues(t *testing.T, typ tftypes.Type, value, valueHash tftypes.Value) tftypes.Value {
 	t.Helper()
+	// The timeouts block is part of the object type; it is never set in these
+	// cases, so it is a null object of the schema's own type.
+	timeoutsType := typ.(tftypes.Object).AttributeTypes["timeouts"]
 	return tftypes.NewValue(typ, map[string]tftypes.Value{
+		"timeouts":    tftypes.NewValue(timeoutsType, nil),
 		"id":          tftypes.NewValue(tftypes.String, "secret-id"),
 		"name":        tftypes.NewValue(tftypes.String, "example"),
 		"description": tftypes.NewValue(tftypes.String, nil),

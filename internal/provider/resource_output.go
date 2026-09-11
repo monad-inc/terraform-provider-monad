@@ -39,7 +39,7 @@ func (r *ResourceOutput) Schema(
 	req resource.SchemaRequest,
 	resp *resource.SchemaResponse,
 ) {
-	resp.Schema = getConnectorSchema()
+	resp.Schema = getConnectorSchema(ctx)
 }
 
 func (r *ResourceOutput) Configure(
@@ -74,6 +74,12 @@ func (r *ResourceOutput) Create(
 	var data ResourceConnectorModel
 
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Create, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -142,6 +148,12 @@ func (r *ResourceOutput) Read(
 		return
 	}
 
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Read, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	output, monadResp, err := r.client.OrganizationOutputsAPI.
 		GetOrganizationOutput(
 			ctx,
@@ -190,6 +202,12 @@ func (r *ResourceOutput) Update(
 	var data ResourceConnectorModel
 
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Update, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -274,6 +292,12 @@ func (r *ResourceOutput) Delete(
 	var data ResourceConnectorModel
 
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Delete, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
 	if resp.Diagnostics.HasError() {
 		return
 	}

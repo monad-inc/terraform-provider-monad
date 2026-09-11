@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
+	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -27,6 +30,7 @@ type ResourcePipeline struct {
 }
 
 type ResourcePipelineModel struct {
+	Timeouts    timeouts.Value         `tfsdk:"timeouts"`
 	ID          types.String           `tfsdk:"id"`
 	Name        types.String           `tfsdk:"name"`
 	Description types.String           `tfsdk:"description"`
@@ -157,6 +161,9 @@ func (r *ResourcePipeline) Schema(
 			},
 		},
 		Blocks: map[string]schema.Block{
+			"timeouts": timeouts.Block(ctx, timeouts.Opts{
+				Create: true, Read: true, Update: true, Delete: true,
+			}),
 			"nodes": schema.SetNestedBlock{
 				// A set, not a list (ENG-9573): node order in HCL is not
 				// semantically significant. See the note on "edges" below.
@@ -384,6 +391,16 @@ func (r *ResourcePipeline) Create(
 		return
 	}
 
+	// The create call runs under the resource's create timeout; the adopt-after-
+	// timeout lookup below must outlive it, so it uses the parent context (the
+	// provider-level request_timeout still bounds each of its requests).
+	parentCtx := ctx
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Create, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	enabled := true
 	if !data.Enabled.IsNull() {
 		enabled = data.Enabled.ValueBool()
@@ -403,12 +420,46 @@ func (r *ResourcePipeline) Create(
 		Edges:       edges,
 	}
 
+	startedAt := time.Now().UTC()
 	pipeline, monadResp, err := r.client.PipelinesAPI.CreatePipeline(
 		ctx,
 		r.client.OrganizationID,
 	).CreatePipelineRequest(monad.RoutesV2CreatePipelineRequestAsCreatePipelineRequest(&request)).
 		Execute()
-	if err != nil {
+	var pipelineID string
+	switch {
+	case err == nil:
+		pipelineID = *pipeline.Id
+	case isTimeoutError(err):
+		// The API kept working after we gave up: pipeline creation is
+		// serialized server-side and a burst of concurrent creates can push
+		// the tail past any client budget. Returning an error here is what
+		// used to leave the pipeline on the server but out of state, so the
+		// next apply created a duplicate (ENG-10257). Look for it by name
+		// instead and adopt it if it is unambiguous.
+		adopted, adoptErr := r.adoptPipelineAfterTimeout(parentCtx, data.Name.ValueString(), startedAt)
+		if adoptErr != nil {
+			resp.Diagnostics.AddError(
+				"Pipeline create timed out",
+				fmt.Sprintf(
+					"The request to create pipeline %q exceeded its create timeout: %s. %s",
+					data.Name.ValueString(), err, adoptErr,
+				),
+			)
+			return
+		}
+		pipelineID = adopted
+		resp.Diagnostics.AddWarning(
+			"Pipeline create timed out but completed on the server",
+			fmt.Sprintf(
+				"The request to create pipeline %q exceeded its create timeout, "+
+					"but the API finished creating it as %s, so it has been adopted into state. "+
+					"Consider a longer `timeouts { create = … }` (or provider request_timeout), "+
+					"or a lower -parallelism.",
+				data.Name.ValueString(), pipelineID,
+			),
+		)
+	default:
 		resp.Diagnostics.AddError(
 			"Client Error",
 			fmt.Sprintf(
@@ -427,7 +478,7 @@ func (r *ResourcePipeline) Create(
 	// slugs, node ordering, server-generated node-instance ids — that trip
 	// "Provider produced inconsistent result after apply" and cause perpetual
 	// diffs.
-	data.ID = types.StringValue(*pipeline.Id)
+	data.ID = types.StringValue(pipelineID)
 	// `enabled` is Optional+Computed; resolve any unknown (omitted config) to
 	// the value actually sent so state is known and consistent.
 	data.Enabled = types.BoolValue(enabled)
@@ -435,6 +486,90 @@ func (r *ResourcePipeline) Create(
 	tflog.Trace(ctx, "created a pipeline resource")
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+// adoptTimeoutGrace is how long adoptPipelineAfterTimeout keeps polling the
+// pipeline list for a create that was still in flight when the client gave up,
+// and adoptPollInterval how often. Variables so tests can shorten them.
+var (
+	adoptTimeoutGrace = 2 * time.Minute
+	adoptPollInterval = 5 * time.Second
+)
+
+// adoptPipelineAfterTimeout finds the pipeline a timed-out create produced. It
+// polls the org's pipeline list for one whose name matches and whose
+// created_at is not before the request started, and returns its id when there
+// is exactly one such pipeline. Zero matches after the grace period means the
+// server really did not create it (safe to retry); more than one means the
+// caller must disambiguate with `terraform import`, so an error is returned
+// rather than guessing.
+func (r *ResourcePipeline) adoptPipelineAfterTimeout(ctx context.Context, name string, startedAt time.Time) (string, error) {
+	// Tolerate clock skew between this machine and the API.
+	notBefore := startedAt.Add(-time.Minute)
+	deadline := time.Now().Add(adoptTimeoutGrace)
+	for {
+		matches, err := r.listPipelinesByName(ctx, name, notBefore)
+		if err != nil {
+			return "", fmt.Errorf("could not list pipelines to check whether it was created anyway: %v. "+
+				"Check the organization for a pipeline named %q before re-running; if it exists, "+
+				"`terraform import` it to avoid creating a duplicate", err, name)
+		}
+		switch len(matches) {
+		case 1:
+			return matches[0], nil
+		case 0:
+			if time.Now().After(deadline) {
+				return "", fmt.Errorf("no pipeline named %q appeared within %s, so it was not created; "+
+					"re-run to retry, or raise request_timeout / lower -parallelism", name, adoptTimeoutGrace)
+			}
+			select {
+			case <-ctx.Done():
+				return "", fmt.Errorf("gave up waiting for pipeline %q: %v", name, ctx.Err())
+			case <-time.After(adoptPollInterval):
+			}
+		default:
+			return "", fmt.Errorf("%d pipelines named %q were created since the request started (%s); "+
+				"cannot tell which one this resource is. Import the right one with "+
+				"`terraform import <address> <id>` and delete the others",
+				len(matches), name, strings.Join(matches, ", "))
+		}
+	}
+}
+
+// listPipelinesByName pages through the org's pipelines and returns the ids of
+// those named `name` and created at or after notBefore (pipelines without a
+// parseable created_at are included, to err on the side of finding it).
+func (r *ResourcePipeline) listPipelinesByName(ctx context.Context, name string, notBefore time.Time) ([]string, error) {
+	var ids []string
+	const pageSize int32 = 100
+	for offset := int32(0); ; offset += pageSize {
+		page, monadResp, err := r.client.PipelinesAPI.ListPipelines(ctx, r.client.OrganizationID).
+			Limit(pageSize).Offset(offset).Execute()
+		if err != nil {
+			return nil, fmt.Errorf("%v (response: %s)", err, getResponseBody(monadResp))
+		}
+		if page == nil {
+			break
+		}
+		for _, p := range page.Pipelines {
+			if p.Id == nil || p.Name == nil || *p.Name != name {
+				continue
+			}
+			if p.CreatedAt != nil {
+				if created, perr := time.Parse(time.RFC3339Nano, *p.CreatedAt); perr == nil && created.Before(notBefore) {
+					continue
+				}
+			}
+			ids = append(ids, *p.Id)
+		}
+		if len(page.Pipelines) < int(pageSize) {
+			break
+		}
+		if page.Pagination != nil && page.Pagination.Total != nil && offset+pageSize >= *page.Pagination.Total {
+			break
+		}
+	}
+	return ids, nil
 }
 
 func (r *ResourcePipeline) Read(
@@ -445,6 +580,12 @@ func (r *ResourcePipeline) Read(
 	var data ResourcePipelineModel
 
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Read, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -773,6 +914,12 @@ func (r *ResourcePipeline) Update(
 		return
 	}
 
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Update, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	enabled := true
 	if !data.Enabled.IsNull() {
 		enabled = data.Enabled.ValueBool()
@@ -830,6 +977,12 @@ func (r *ResourcePipeline) Delete(
 	var data ResourcePipelineModel
 
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Delete, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
 	if resp.Diagnostics.HasError() {
 		return
 	}

@@ -25,6 +25,7 @@ Monad Pipeline
 - `edges` (Block Set) Set of edges in the pipeline. Edge order in HCL is not significant; an edge is identified by its `from_node_instance_slug`/`to_node_instance_slug` pair, never its position. Two edges identical in every attribute collapse into one set element. (see [below for nested schema](#nestedblock--edges))
 - `enabled` (Boolean) Whether the pipeline is enabled
 - `nodes` (Block Set) Set of nodes in the pipeline. Node order in HCL is not significant; a node is identified by its slug and its component, never its position. (see [below for nested schema](#nestedblock--nodes))
+- `timeouts` (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
 
 ### Read-Only
 
@@ -95,3 +96,14 @@ Required:
 Optional:
 
 - `slug` (String) Slug for the node
+
+
+<a id="nestedblock--timeouts"></a>
+### Nested Schema for `timeouts`
+
+Optional:
+
+- `create` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours).
+- `delete` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours). Setting a timeout for a Delete operation is only applicable if changes are saved into state before the destroy operation occurs.
+- `read` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours). Read operations occur during any refresh or planning operation when refresh is enabled.
+- `update` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours).

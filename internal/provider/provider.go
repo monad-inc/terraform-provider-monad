@@ -2,11 +2,14 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
 	"github.com/hashicorp/terraform-plugin-framework/function"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -29,6 +32,7 @@ type MonadProviderModel struct {
 	APIToken       types.String `tfsdk:"api_token"`
 	OrganizationID types.String `tfsdk:"organization_id"`
 	UseInsecure    types.Bool   `tfsdk:"use_insecure"`
+	RequestTimeout types.String `tfsdk:"request_timeout"`
 }
 
 func (p *MonadProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
@@ -55,6 +59,13 @@ func (p *MonadProvider) Schema(ctx context.Context, req provider.SchemaRequest, 
 			"use_insecure": schema.BoolAttribute{
 				MarkdownDescription: "Set to true to skip TLS verification. Not recommended for production use. Can also be set with the MONAD_USE_INSECURE environment variable.",
 				Optional:            true,
+			},
+			"request_timeout": schema.StringAttribute{
+				MarkdownDescription: "Per-request timeout for calls to the Monad API, as a Go duration (e.g. `5m`, `90s`). " +
+					"Defaults to `5m`. Pipeline creation can take over a minute when several pipelines are created " +
+					"concurrently; a budget that is too short makes Terraform record a create as failed while the API " +
+					"finishes it. Can also be set with the MONAD_REQUEST_TIMEOUT environment variable.",
+				Optional: true,
 			},
 		},
 	}
@@ -109,15 +120,45 @@ func (p *MonadProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		isInsecure = true
 	}
 
+	timeoutStr := os.Getenv("MONAD_REQUEST_TIMEOUT")
+	if !data.RequestTimeout.IsNull() {
+		timeoutStr = data.RequestTimeout.ValueString()
+	}
+	requestTimeout, err := parseRequestTimeout(timeoutStr)
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("request_timeout"),
+			"Invalid request_timeout",
+			err.Error(),
+		)
+	}
+
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	client := client.NewMonadAPIClient(baseURL, apiToken, organizationID, isInsecure)
+	client := client.NewMonadAPIClient(baseURL, apiToken, organizationID, isInsecure, requestTimeout)
 	p.organizationID = organizationID
 
 	resp.DataSourceData = client
 	resp.ResourceData = client
+}
+
+// parseRequestTimeout turns the practitioner's `request_timeout` (or the
+// MONAD_REQUEST_TIMEOUT environment variable) into a duration. Empty means
+// "use the client default"; anything else must be a positive Go duration.
+func parseRequestTimeout(s string) (time.Duration, error) {
+	if s == "" {
+		return client.DefaultRequestTimeout, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a valid duration (use Go syntax such as \"5m\" or \"90s\"): %v", s, err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("request_timeout must be greater than zero, got %q", s)
+	}
+	return d, nil
 }
 
 func (p *MonadProvider) Resources(ctx context.Context) []func() resource.Resource {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -28,14 +29,15 @@ type ResourceAlertRule struct {
 }
 
 type ResourceAlertRuleModel struct {
-	ID          types.String  `tfsdk:"id"`
-	Name        types.String  `tfsdk:"name"`
-	Description types.String  `tfsdk:"description"`
-	Type        types.String  `tfsdk:"type"`
-	Severity    types.String  `tfsdk:"severity"`
-	Active      types.Bool    `tfsdk:"active"`
-	PipelineIDs types.Set     `tfsdk:"pipeline_ids"`
-	RuleConfig  types.Dynamic `tfsdk:"rule_config"`
+	Timeouts    timeouts.Value `tfsdk:"timeouts"`
+	ID          types.String   `tfsdk:"id"`
+	Name        types.String   `tfsdk:"name"`
+	Description types.String   `tfsdk:"description"`
+	Type        types.String   `tfsdk:"type"`
+	Severity    types.String   `tfsdk:"severity"`
+	Active      types.Bool     `tfsdk:"active"`
+	PipelineIDs types.Set      `tfsdk:"pipeline_ids"`
+	RuleConfig  types.Dynamic  `tfsdk:"rule_config"`
 }
 
 func NewResourceAlertRule() resource.Resource {
@@ -80,6 +82,11 @@ func (r *ResourceAlertRule) Schema(
 	resp *resource.SchemaResponse,
 ) {
 	resp.Schema = schema.Schema{
+		Blocks: map[string]schema.Block{
+			"timeouts": timeouts.Block(ctx, timeouts.Opts{
+				Create: true, Read: true, Update: true, Delete: true,
+			}),
+		},
 		MarkdownDescription: "Monad Alert Rule",
 
 		Attributes: map[string]schema.Attribute{
@@ -165,6 +172,12 @@ func (r *ResourceAlertRule) Create(
 		return
 	}
 
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Create, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	active := true
 	if !data.Active.IsNull() {
 		active = data.Active.ValueBool()
@@ -234,6 +247,12 @@ func (r *ResourceAlertRule) Read(
 	var data ResourceAlertRuleModel
 
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Read, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -308,6 +327,12 @@ func (r *ResourceAlertRule) Update(
 		return
 	}
 
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Update, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	active := true
 	if !data.Active.IsNull() {
 		active = data.Active.ValueBool()
@@ -377,6 +402,12 @@ func (r *ResourceAlertRule) Delete(
 	var data ResourceAlertRuleModel
 
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Delete, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
 	if resp.Diagnostics.HasError() {
 		return
 	}
