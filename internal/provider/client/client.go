@@ -9,13 +9,27 @@ import (
 	monad "github.com/monad-inc/sdk/go"
 )
 
+// DefaultRequestTimeout bounds every HTTP request the provider makes when the
+// practitioner does not set `request_timeout`. Pipeline creation in particular
+// can take well over a minute when several pipelines are created concurrently
+// (the API serializes them), and the old fixed 60 s budget made Terraform
+// record such creates as failed while the server went on to finish them
+// (ENG-10257).
+const DefaultRequestTimeout = 5 * time.Minute
+
 type Client struct {
 	*monad.APIClient
 
 	OrganizationID string
+	// RequestTimeout is the per-request budget the HTTP client enforces.
+	RequestTimeout time.Duration
 }
 
-func NewMonadAPIClient(host, apiToken, organizationID string, isInsecure bool) *Client {
+func NewMonadAPIClient(host, apiToken, organizationID string, isInsecure bool, requestTimeout time.Duration) *Client {
+	if requestTimeout <= 0 {
+		requestTimeout = DefaultRequestTimeout
+	}
+
 	debugEnvvar := os.Getenv("DEBUG")
 
 	var debug bool
@@ -25,6 +39,7 @@ func NewMonadAPIClient(host, apiToken, organizationID string, isInsecure bool) *
 
 	return &Client{
 		OrganizationID: organizationID,
+		RequestTimeout: requestTimeout,
 		APIClient: monad.NewAPIClient(&monad.Configuration{
 			Debug:     debug,
 			UserAgent: "terraform-provider-monad/1.0",
@@ -35,7 +50,7 @@ func NewMonadAPIClient(host, apiToken, organizationID string, isInsecure bool) *
 				},
 			},
 			HTTPClient: &http.Client{
-				Timeout: time.Minute,
+				Timeout: requestTimeout,
 				Transport: &transport{
 					apiToken: apiToken,
 					next: &http.Transport{

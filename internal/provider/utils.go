@@ -7,11 +7,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"reflect"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -39,6 +42,26 @@ func getResponseBody(resp *http.Response) []byte {
 // from state and recreated on the next plan rather than wedging plan/apply on
 // refresh (ENG-9259). Once ENG-9258 ships the 404, the sentinel branch becomes
 // redundant and can be removed.
+// isTimeoutError reports whether err is the client giving up on a request --
+// the HTTP client's per-request timeout, a cancelled/expired context, or any
+// net.Error that reports Timeout(). The SDK returns transport failures
+// unwrapped (a *url.Error), so errors.As finds them directly.
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	// net/http reports a Client.Timeout as a *url.Error whose Timeout() is true
+	// (handled above) but older paths surface only the message; match it too.
+	return strings.Contains(err.Error(), "Client.Timeout exceeded")
+}
+
 func isNotFoundResponse(resp *http.Response, body []byte) bool {
 	if resp != nil {
 		switch resp.StatusCode {

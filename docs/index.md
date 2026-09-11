@@ -19,4 +19,5 @@ description: |-
 - `api_token` (String, Sensitive) API token for authentication. Can also be set with the MONAD_API_TOKEN environment variable.
 - `base_url` (String) Base URL for the Monad API. Can also be set with the MONAD_BASE_URL environment variable.
 - `organization_id` (String) Organization ID for all resources. Can also be set with the MONAD_ORGANIZATION_ID environment variable.
+- `request_timeout` (String) Per-request timeout for calls to the Monad API, as a Go duration (e.g. `5m`, `90s`). Defaults to `5m`. Pipeline creation can take over a minute when several pipelines are created concurrently; a budget that is too short makes Terraform record a create as failed while the API finishes it. Can also be set with the MONAD_REQUEST_TIMEOUT environment variable.
 - `use_insecure` (Boolean) Set to true to skip TLS verification. Not recommended for production use. Can also be set with the MONAD_USE_INSECURE environment variable.

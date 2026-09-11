@@ -4,6 +4,31 @@ All notable changes to this provider are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/). While the provider is pre-1.0,
 breaking changes are released as minor version bumps.
 
+## Unreleased
+
+### Added
+
+- **`request_timeout` provider attribute** (also `MONAD_REQUEST_TIMEOUT`). The
+  per-request HTTP budget was a fixed 60 s with no way to change it. It now
+  defaults to **5 minutes** and accepts any positive Go duration (`"90s"`,
+  `"10m"`).
+
+### Fixed
+
+- **A `monad_pipeline` create that outlives the request timeout no longer
+  leaves the pipeline on the server but missing from state.** Pipeline
+  creation is serialized on the API side, so a burst of concurrent creates
+  (Terraform's default `-parallelism=10`) pushes the tail past the client
+  budget; the provider reported `Client.Timeout exceeded`, Terraform recorded
+  the resource as failed, the API finished creating it anyway, and the next
+  apply created a duplicate (reproduced: 4 of 7 pipelines timed out, 2 of them
+  existed afterwards). On a timeout the provider now polls the org's pipelines
+  for up to two minutes for a same-named pipeline created since the request
+  started and, when exactly one exists, adopts it into state with a warning.
+  Zero matches is reported as "not created, safe to retry"; several matches
+  name the candidate ids and ask for `terraform import` rather than guessing.
+  (ENG-10257)
+
 ## 0.4.1
 
 ### Fixed
