@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -13,6 +14,7 @@ import (
 )
 
 type ResourceConnectorModel struct {
+	Timeouts      timeouts.Value           `tfsdk:"timeouts"`
 	ID            types.String             `tfsdk:"id"`
 	Name          types.String             `tfsdk:"name"`
 	Description   types.String             `tfsdk:"description"`
@@ -51,7 +53,7 @@ func (m *ResourceConnectorModel) getSettingsAndSecrets() (map[string]any, map[st
 	return settings, secrets, nil
 }
 
-func getConnectorSchema() schema.Schema {
+func getConnectorSchema(ctx context.Context) schema.Schema {
 	return schema.Schema{
 		MarkdownDescription: "Monad Connector",
 
@@ -78,6 +80,9 @@ func getConnectorSchema() schema.Schema {
 		},
 
 		Blocks: map[string]schema.Block{
+			"timeouts": timeouts.Block(ctx, timeouts.Opts{
+				Create: true, Read: true, Update: true, Delete: true,
+			}),
 			"config": schema.SingleNestedBlock{
 				MarkdownDescription: "Connector configuration",
 				Attributes: map[string]schema.Attribute{

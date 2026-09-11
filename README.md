@@ -111,7 +111,7 @@ provider "monad" {
 - `MONAD_API_TOKEN` - API token for authentication
 - `MONAD_ORGANIZATION_ID` - Organization ID for all resources
 - `MONAD_USE_INSECURE` - Skip TLS verification for Monad API. (Not recommended for production use)
-- `MONAD_REQUEST_TIMEOUT` - Per-request timeout as a Go duration (default `5m`). Pipeline creation is slow under concurrency; raise this, or lower `terraform -parallelism`, if creates time out
+- `MONAD_REQUEST_TIMEOUT` - Per-request timeout as a Go duration (default `5m`). Pipeline creation is slow under concurrency; raise this, or lower `terraform -parallelism`, if creates time out. Every resource also accepts a `timeouts { create = "10m" }` block to give a single operation more time
 
 ## Resources
 

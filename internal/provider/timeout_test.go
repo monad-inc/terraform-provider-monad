@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-framework/resource"
 
 	"github.com/monad-inc/terraform-provider-monad/internal/provider/client"
 )
@@ -81,11 +85,61 @@ func TestNewMonadAPIClientTimeout(t *testing.T) {
 	if c.RequestTimeout != client.DefaultRequestTimeout {
 		t.Fatalf("zero timeout should fall back to default %v, got %v", client.DefaultRequestTimeout, c.RequestTimeout)
 	}
-	if got := c.GetConfig().HTTPClient.Timeout; got != client.DefaultRequestTimeout {
-		t.Fatalf("http client timeout = %v, want %v", got, client.DefaultRequestTimeout)
+	if got := c.GetConfig().HTTPClient.Timeout; got != 0 {
+		t.Fatalf("http.Client.Timeout should be unset (deadlines come from contexts), got %v", got)
 	}
 	c = client.NewMonadAPIClient("https://example.invalid", "tok", "org", false, 42*time.Second)
-	if got := c.GetConfig().HTTPClient.Timeout; got != 42*time.Second {
-		t.Fatalf("http client timeout = %v, want 42s", got)
+	if c.RequestTimeout != 42*time.Second {
+		t.Fatalf("RequestTimeout = %v, want 42s", c.RequestTimeout)
+	}
+}
+
+// TestTransportAppliesDefaultTimeoutOnlyWithoutDeadline: a request with no
+// context deadline is bounded by request_timeout; one that carries its own
+// (longer) deadline is not cut short by the provider default.
+func TestTransportAppliesDefaultTimeoutOnlyWithoutDeadline(t *testing.T) {
+	slow := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"pipelines":[],"pagination":{"total":0}}`))
+	}))
+	t.Cleanup(slow.Close)
+	c := client.NewMonadAPIClient(slow.URL, "tok", "org-1", true, 100*time.Millisecond)
+
+	// No deadline on the context -> the 100 ms provider default applies.
+	_, _, err := c.PipelinesAPI.ListPipelines(context.Background(), "org-1").Execute()
+	if !isTimeoutError(err) {
+		t.Fatalf("expected a timeout from the provider default, got %v", err)
+	}
+
+	// A longer per-operation deadline wins over the provider default.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if _, _, err := c.PipelinesAPI.ListPipelines(ctx, "org-1").Execute(); err != nil {
+		t.Fatalf("per-operation deadline should not be cut short by the default: %v", err)
+	}
+}
+
+// Every resource exposes a `timeouts` block with create/read/update/delete.
+func TestEveryResourceHasTimeoutsBlock(t *testing.T) {
+	for _, mk := range New("test")().Resources(context.Background()) {
+		r := mk()
+		var meta resource.MetadataResponse
+		r.Metadata(context.Background(), resource.MetadataRequest{ProviderTypeName: "monad"}, &meta)
+		var sr resource.SchemaResponse
+		r.Schema(context.Background(), resource.SchemaRequest{}, &sr)
+		if sr.Diagnostics.HasError() {
+			t.Fatalf("%s: schema diagnostics: %v", meta.TypeName, sr.Diagnostics)
+		}
+		blk, ok := sr.Schema.Blocks["timeouts"]
+		if !ok {
+			t.Fatalf("%s: no timeouts block", meta.TypeName)
+		}
+		attrs := blk.GetNestedObject().GetAttributes()
+		for _, want := range []string{"create", "read", "update", "delete"} {
+			if _, ok := attrs[want]; !ok {
+				t.Fatalf("%s: timeouts block lacks %q", meta.TypeName, want)
+			}
+		}
 	}
 }

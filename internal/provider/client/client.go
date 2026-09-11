@@ -50,9 +50,13 @@ func NewMonadAPIClient(host, apiToken, organizationID string, isInsecure bool, r
 				},
 			},
 			HTTPClient: &http.Client{
-				Timeout: requestTimeout,
+				// No fixed http.Client.Timeout: each call carries its own
+				// deadline (a resource's `timeouts {}` block), and the
+				// transport applies requestTimeout to any request that
+				// arrives without one.
 				Transport: &transport{
-					apiToken: apiToken,
+					apiToken:       apiToken,
+					defaultTimeout: requestTimeout,
 					next: &http.Transport{
 						TLSClientConfig: &tls.Config{
 							InsecureSkipVerify: isInsecure,

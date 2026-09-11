@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -29,6 +30,7 @@ type ResourcePipeline struct {
 }
 
 type ResourcePipelineModel struct {
+	Timeouts    timeouts.Value         `tfsdk:"timeouts"`
 	ID          types.String           `tfsdk:"id"`
 	Name        types.String           `tfsdk:"name"`
 	Description types.String           `tfsdk:"description"`
@@ -159,6 +161,9 @@ func (r *ResourcePipeline) Schema(
 			},
 		},
 		Blocks: map[string]schema.Block{
+			"timeouts": timeouts.Block(ctx, timeouts.Opts{
+				Create: true, Read: true, Update: true, Delete: true,
+			}),
 			"nodes": schema.SetNestedBlock{
 				// A set, not a list (ENG-9573): node order in HCL is not
 				// semantically significant. See the note on "edges" below.
@@ -386,6 +391,16 @@ func (r *ResourcePipeline) Create(
 		return
 	}
 
+	// The create call runs under the resource's create timeout; the adopt-after-
+	// timeout lookup below must outlive it, so it uses the parent context (the
+	// provider-level request_timeout still bounds each of its requests).
+	parentCtx := ctx
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Create, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	enabled := true
 	if !data.Enabled.IsNull() {
 		enabled = data.Enabled.ValueBool()
@@ -422,13 +437,13 @@ func (r *ResourcePipeline) Create(
 		// used to leave the pipeline on the server but out of state, so the
 		// next apply created a duplicate (ENG-10257). Look for it by name
 		// instead and adopt it if it is unambiguous.
-		adopted, adoptErr := r.adoptPipelineAfterTimeout(ctx, data.Name.ValueString(), startedAt)
+		adopted, adoptErr := r.adoptPipelineAfterTimeout(parentCtx, data.Name.ValueString(), startedAt)
 		if adoptErr != nil {
 			resp.Diagnostics.AddError(
 				"Pipeline create timed out",
 				fmt.Sprintf(
-					"The request to create pipeline %q exceeded the provider's request_timeout (%s): %s. %s",
-					data.Name.ValueString(), r.client.RequestTimeout, err, adoptErr,
+					"The request to create pipeline %q exceeded its create timeout: %s. %s",
+					data.Name.ValueString(), err, adoptErr,
 				),
 			)
 			return
@@ -437,10 +452,11 @@ func (r *ResourcePipeline) Create(
 		resp.Diagnostics.AddWarning(
 			"Pipeline create timed out but completed on the server",
 			fmt.Sprintf(
-				"The request to create pipeline %q exceeded the provider's request_timeout (%s), "+
+				"The request to create pipeline %q exceeded its create timeout, "+
 					"but the API finished creating it as %s, so it has been adopted into state. "+
-					"Consider raising request_timeout or lowering -parallelism.",
-				data.Name.ValueString(), r.client.RequestTimeout, pipelineID,
+					"Consider a longer `timeouts { create = … }` (or provider request_timeout), "+
+					"or a lower -parallelism.",
+				data.Name.ValueString(), pipelineID,
 			),
 		)
 	default:
@@ -564,6 +580,12 @@ func (r *ResourcePipeline) Read(
 	var data ResourcePipelineModel
 
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Read, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -892,6 +914,12 @@ func (r *ResourcePipeline) Update(
 		return
 	}
 
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Update, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	enabled := true
 	if !data.Enabled.IsNull() {
 		enabled = data.Enabled.ValueBool()
@@ -949,6 +977,12 @@ func (r *ResourcePipeline) Delete(
 	var data ResourcePipelineModel
 
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Delete, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
 	if resp.Diagnostics.HasError() {
 		return
 	}

@@ -9,12 +9,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -60,6 +62,24 @@ func isTimeoutError(err error) bool {
 	// net/http reports a Client.Timeout as a *url.Error whose Timeout() is true
 	// (handled above) but older paths surface only the message; match it too.
 	return strings.Contains(err.Error(), "Client.Timeout exceeded")
+}
+
+// withOperationTimeout derives the context an API operation runs under from
+// the resource's `timeouts { … }` block (get is one of timeouts.Value.Create /
+// Read / Update / Delete), falling back to the provider-level request_timeout.
+// The returned cancel must be deferred by the caller.
+func withOperationTimeout(
+	ctx context.Context,
+	get func(context.Context, time.Duration) (time.Duration, diag.Diagnostics),
+	fallback time.Duration,
+	diags *diag.Diagnostics,
+) (context.Context, context.CancelFunc) {
+	d, ds := get(ctx, fallback)
+	diags.Append(ds...)
+	if diags.HasError() || d <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, d)
 }
 
 func isNotFoundResponse(resp *http.Response, body []byte) bool {

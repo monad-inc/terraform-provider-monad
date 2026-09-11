@@ -11,7 +11,14 @@ breaking changes are released as minor version bumps.
 - **`request_timeout` provider attribute** (also `MONAD_REQUEST_TIMEOUT`). The
   per-request HTTP budget was a fixed 60 s with no way to change it. It now
   defaults to **5 minutes** and accepts any positive Go duration (`"90s"`,
-  `"10m"`).
+  `"10m"`). It applies to every API call that does not carry its own
+  deadline.
+- **`timeouts { create, read, update, delete }` block on every resource**
+  (`monad_input`, `monad_output`, `monad_enrichment`, `monad_transform`,
+  `monad_pipeline`, `monad_secret`, `monad_alert_rule`), the standard
+  Terraform way to give one slow operation more time. Each operation runs
+  under its own deadline; unset entries fall back to `request_timeout`, and a
+  per-resource value may exceed the provider default.
 
 ### Fixed
 

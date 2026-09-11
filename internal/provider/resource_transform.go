@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -27,10 +28,11 @@ type ResourceTransform struct {
 }
 
 type ResourceTransformModel struct {
-	ID          types.String  `tfsdk:"id"`
-	Name        types.String  `tfsdk:"name"`
-	Description types.String  `tfsdk:"description"`
-	Config      types.Dynamic `tfsdk:"config"`
+	Timeouts    timeouts.Value `tfsdk:"timeouts"`
+	ID          types.String   `tfsdk:"id"`
+	Name        types.String   `tfsdk:"name"`
+	Description types.String   `tfsdk:"description"`
+	Config      types.Dynamic  `tfsdk:"config"`
 }
 
 func NewResourceTransform() resource.Resource {
@@ -75,6 +77,11 @@ func (r *ResourceTransform) Schema(
 	resp *resource.SchemaResponse,
 ) {
 	resp.Schema = schema.Schema{
+		Blocks: map[string]schema.Block{
+			"timeouts": timeouts.Block(ctx, timeouts.Opts{
+				Create: true, Read: true, Update: true, Delete: true,
+			}),
+		},
 		MarkdownDescription: "Monad Transform",
 
 		Attributes: map[string]schema.Attribute{
@@ -116,6 +123,12 @@ func (r *ResourceTransform) Create(
 	var data ResourceTransformModel
 
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Create, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -175,6 +188,12 @@ func (r *ResourceTransform) Read(
 	var data ResourceTransformModel
 
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Read, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -262,6 +281,12 @@ func (r *ResourceTransform) Update(
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Update, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	transformConfig, err := parseTransformConfig(ctx, data.Config)
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -312,6 +337,12 @@ func (r *ResourceTransform) Delete(
 	var data ResourceTransformModel
 
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Delete, r.client.RequestTimeout, &resp.Diagnostics)
+	defer cancel()
 	if resp.Diagnostics.HasError() {
 		return
 	}
