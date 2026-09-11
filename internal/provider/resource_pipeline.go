@@ -42,11 +42,19 @@ type ResourcePipelineNode struct {
 }
 
 type ResourcePipelineEdge struct {
-	Name                 types.String              `tfsdk:"name"`
-	Description          types.String              `tfsdk:"description"`
-	FromNodeInstanceSlug types.String              `tfsdk:"from_node_instance_slug"`
-	ToNodeInstanceSlug   types.String              `tfsdk:"to_node_instance_slug"`
-	Condition            ResourcePipelineCondition `tfsdk:"condition"`
+	Name                 types.String                     `tfsdk:"name"`
+	Description          types.String                     `tfsdk:"description"`
+	FromNodeInstanceSlug types.String                     `tfsdk:"from_node_instance_slug"`
+	ToNodeInstanceSlug   types.String                     `tfsdk:"to_node_instance_slug"`
+	Condition            ResourcePipelineCondition        `tfsdk:"condition"`
+	SchemaDetectionSpec  *ResourcePipelineSchemaDetection `tfsdk:"schema_detection_spec"`
+}
+
+// ResourcePipelineSchemaDetection is an edge's schema drift detection setting
+// (RFC 0014). Omitting the block means detection is off for that edge.
+type ResourcePipelineSchemaDetection struct {
+	Enabled         types.Bool `tfsdk:"enabled"`
+	DisableAlerting types.Bool `tfsdk:"disable_alerting"`
 }
 
 type ResourcePipelineCondition struct {
@@ -228,6 +236,32 @@ func (r *ResourcePipeline) Schema(
 						},
 					},
 					Blocks: map[string]schema.Block{
+						"schema_detection_spec": schema.SingleNestedBlock{
+							MarkdownDescription: "Schema drift detection for this edge (RFC 0014). " +
+								"**Omitting the block means detection is off:** the API rebuilds every edge " +
+								"from the request on each pipeline save, so an edge whose block is absent is " +
+								"saved with `enabled = false`. Disabling detection discards the learned schema " +
+								"and the learning clock (about 48 hours to graduate), so declare the block on " +
+								"every edge where detection should stay on. If detection was switched on " +
+								"outside Terraform, the next plan shows the block being removed — add it to the " +
+								"configuration to keep it. Enabling requires the schema drift detection feature " +
+								"on the organization; the API rejects the save otherwise.",
+							Attributes: map[string]schema.Attribute{
+								// Plain Optional booleans: no Default. A static default inside
+								// a set-nested block made Terraform plan a configured `true` as
+								// `false` (edges are matched by value, and defaults are applied
+								// before that match). Read instead maps an API `false` to null,
+								// the omitted-attribute shape, so imports plan clean.
+								"enabled": schema.BoolAttribute{
+									MarkdownDescription: "Learn the record schema on this edge and detect drift. Omitted or `false` is off; omit rather than writing `false`.",
+									Optional:            true,
+								},
+								"disable_alerting": schema.BoolAttribute{
+									MarkdownDescription: "Keep detecting drift but do not raise schema drift alerts for this edge. Omitted or `false` alerts normally; omit rather than writing `false`.",
+									Optional:            true,
+								},
+							},
+						},
 						"condition": schema.SingleNestedBlock{
 							MarkdownDescription: "Conditions for the edge",
 							Attributes: map[string]schema.Attribute{
@@ -352,6 +386,10 @@ func buildPipelineRequestEdges(ctx context.Context, edges []ResourcePipelineEdge
 			Conditions: &monad.ModelsConditionEvaluatable{
 				Operator: (*monad.ModelsConditionOperator)(edge.Condition.Operator.ValueStringPointer()),
 			},
+			// Always explicit: an omitted block is sent as disabled, which is
+			// what the API would do with a missing field anyway (ENG-9547),
+			// but saying so keeps the request self-describing.
+			SchemaDetectionSpec: buildSchemaDetectionRequest(edge.SchemaDetectionSpec),
 		}
 
 		if len(edge.Condition.Conditions) == 0 {
@@ -575,9 +613,60 @@ func buildPipelineStateEdges(pipeline *monad.ModelsPipelineConfigV2) []ResourceP
 				Operator:   operator,
 				Conditions: conditions,
 			},
+			SchemaDetectionSpec: schemaDetectionFromAPI(edge.SchemaDetectionSpec),
 		}
 	}
 	return edges
+}
+
+// buildSchemaDetectionRequest turns the optional block into the API's spec.
+// A nil block is detection off; unset attributes inside the block are false.
+func buildSchemaDetectionRequest(spec *ResourcePipelineSchemaDetection) *monad.ModelsSchemaDetection {
+	enabled, disableAlerting := false, false
+	if spec != nil {
+		enabled = spec.Enabled.ValueBool()
+		disableAlerting = spec.DisableAlerting.ValueBool()
+	}
+	return &monad.ModelsSchemaDetection{Enabled: &enabled, DisableAlerting: &disableAlerting}
+}
+
+// schemaDetectionFromAPI maps the API's spec into the model. The API always
+// returns the field; `{enabled: false, disable_alerting: false}` is what an
+// omitted block produces, so it maps to a nil block rather than an explicit
+// all-false one -- otherwise every edge without the block would show a diff.
+// Inside a present block a `false` likewise maps to null, the omitted-attribute
+// shape, so `{ enabled = true }` imports without a `disable_alerting` diff.
+// reconcilePipelineEdges keeps an explicitly written `false` from prior state,
+// because the comparison treats null and false as the same setting.
+func schemaDetectionFromAPI(spec *monad.ModelsSchemaDetection) *ResourcePipelineSchemaDetection {
+	if spec == nil {
+		return nil
+	}
+	enabled := spec.Enabled != nil && *spec.Enabled
+	disableAlerting := spec.DisableAlerting != nil && *spec.DisableAlerting
+	if !enabled && !disableAlerting {
+		return nil
+	}
+	out := &ResourcePipelineSchemaDetection{Enabled: types.BoolNull(), DisableAlerting: types.BoolNull()}
+	if enabled {
+		out.Enabled = types.BoolValue(true)
+	}
+	if disableAlerting {
+		out.DisableAlerting = types.BoolValue(true)
+	}
+	return out
+}
+
+// schemaDetectionComparable is the drift-comparison view of the block: nil and
+// an all-false block are the same setting.
+func schemaDetectionComparable(spec *ResourcePipelineSchemaDetection) map[string]any {
+	if spec == nil {
+		return map[string]any{"enabled": false, "disable_alerting": false}
+	}
+	return map[string]any{
+		"enabled":          spec.Enabled.ValueBool(),
+		"disable_alerting": spec.DisableAlerting.ValueBool(),
+	}
 }
 
 func getSlugForNodeID(nodes []monad.ModelsPipelineNode, nodeID string) string {
@@ -716,12 +805,13 @@ func pipelineEdgesComparable(edges []ResourcePipelineEdge) []any {
 			}
 		}
 		out[i] = map[string]any{
-			"name":        stringOrNil(e.Name),
-			"description": stringOrNil(e.Description),
-			"from":        stringOrNil(e.FromNodeInstanceSlug),
-			"to":          stringOrNil(e.ToNodeInstanceSlug),
-			"operator":    stringOrNil(e.Condition.Operator),
-			"conditions":  conditions,
+			"name":             stringOrNil(e.Name),
+			"description":      stringOrNil(e.Description),
+			"from":             stringOrNil(e.FromNodeInstanceSlug),
+			"to":               stringOrNil(e.ToNodeInstanceSlug),
+			"operator":         stringOrNil(e.Condition.Operator),
+			"conditions":       conditions,
+			"schema_detection": schemaDetectionComparable(e.SchemaDetectionSpec),
 		}
 	}
 	return out
