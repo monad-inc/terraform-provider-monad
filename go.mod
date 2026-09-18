@@ -6,8 +6,9 @@ toolchain go1.24.3
 
 require (
 	github.com/hashicorp/terraform-plugin-framework v1.15.0
+	github.com/hashicorp/terraform-plugin-go v0.28.0
 	github.com/hashicorp/terraform-plugin-log v0.9.0
-	github.com/monad-inc/sdk/go v0.0.0-20260710180932-79e5527c6fee
+	github.com/monad-inc/sdk/go v0.0.0-20260911175314-9ffe4d96d29c
 	github.com/stretchr/testify v1.8.3
 )
 
@@ -18,7 +19,6 @@ require (
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/go-plugin v1.6.3 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
-	github.com/hashicorp/terraform-plugin-go v0.28.0 // indirect
 	github.com/hashicorp/terraform-registry-address v0.2.5 // indirect
 	github.com/hashicorp/terraform-svchost v0.1.1 // indirect
 	github.com/hashicorp/yamux v0.1.1 // indirect

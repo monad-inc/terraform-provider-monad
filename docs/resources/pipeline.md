@@ -43,6 +43,7 @@ Optional:
 - `condition` (Block, Optional) Conditions for the edge (see [below for nested schema](#nestedblock--edges--condition))
 - `description` (String) Description of the edge
 - `name` (String) Name of the edge
+- `schema_detection_spec` (Block, Optional) Schema drift detection for this edge (RFC 0014). **Omitting the block means detection is off:** the API rebuilds every edge from the request on each pipeline save, so an edge whose block is absent is saved with `enabled = false`. Disabling detection discards the learned schema and the learning clock (about 48 hours to graduate), so declare the block on every edge where detection should stay on. If detection was switched on outside Terraform, the next plan shows the block being removed — add it to the configuration to keep it. Enabling requires the schema drift detection feature on the organization; the API rejects the save otherwise. (see [below for nested schema](#nestedblock--edges--schema_detection_spec))
 
 <a id="nestedblock--edges--condition"></a>
 ### Nested Schema for `edges.condition`
@@ -81,6 +82,15 @@ Optional:
 - `whitespace_string` (Boolean) For `is_empty`: also treat a whitespace-only string as empty.
 
 
+
+
+<a id="nestedblock--edges--schema_detection_spec"></a>
+### Nested Schema for `edges.schema_detection_spec`
+
+Optional:
+
+- `disable_alerting` (Boolean) Keep detecting drift but do not raise schema drift alerts for this edge. Omitted or `false` alerts normally; omit rather than writing `false`.
+- `enabled` (Boolean) Learn the record schema on this edge and detect drift. Omitted or `false` is off; omit rather than writing `false`.
 
 
 

@@ -131,6 +131,7 @@ Manages data pipelines that connect inputs to outputs with conditional logic.
 - `enabled` (bool, optional) - Whether the pipeline is enabled (defaults to true)
 - `nodes` (block set) - Pipeline nodes configuration (order not significant)
 - `edges` (block set) - Pipeline edge connections (order not significant)
+  - `schema_detection_spec` (block, optional) - Schema drift detection for the edge: `enabled`, `disable_alerting` (omit rather than writing `false`). Omitting the block means detection is off, and the API rebuilds edges on every save, so declare it wherever detection should stay on.
 
 ### monad_input
 
