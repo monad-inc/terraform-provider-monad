@@ -19,6 +19,15 @@ breaking changes are released as minor version bumps.
   Terraform way to give one slow operation more time. Each operation runs
   under its own deadline; unset entries fall back to `request_timeout`, and a
   per-resource value may exceed the provider default.
+- **`schema_detection_spec` block on `monad_pipeline` edges** (`enabled`,
+  `disable_alerting`), so schema drift detection (RFC 0014) can be managed as
+  code and shows up as an ordinary plan diff. The provider never sent the
+  field before, so every pipeline-touching apply silently reset detection to
+  off and discarded the learned schema (ENG-9547). **Omitting the block still
+  means off** — the API rebuilds edges from the request on every save — so
+  declare it on each edge where detection should stay on; detection switched
+  on outside Terraform now appears in the next plan as the block being
+  removed, instead of vanishing without a trace.
 
 ### Fixed
 
@@ -35,6 +44,11 @@ breaking changes are released as minor version bumps.
   Zero matches is reported as "not created, safe to retry"; several matches
   name the candidate ids and ask for `terraform import` rather than guessing.
   (ENG-10257)
+
+### Changed
+
+- Go SDK pin advanced to the 2026-09-11 generated client
+  (`schema_detection_spec.disable_alerting` was missing from the July client).
 
 ## 0.4.1
 

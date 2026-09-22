@@ -9,7 +9,7 @@ require (
 	github.com/hashicorp/terraform-plugin-framework-timeouts v0.7.0
 	github.com/hashicorp/terraform-plugin-go v0.29.0
 	github.com/hashicorp/terraform-plugin-log v0.9.0
-	github.com/monad-inc/sdk/go v0.0.0-20260710180932-79e5527c6fee
+	github.com/monad-inc/sdk/go v0.0.0-20260911175314-9ffe4d96d29c
 	github.com/stretchr/testify v1.10.0
 )
 
