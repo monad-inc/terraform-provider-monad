@@ -20,6 +20,19 @@ breaking changes are released as minor version bumps.
 
 ### Changed
 
+- **Registry documentation rewritten in the style of the hashicorp/aws provider
+  docs** (ENG-10572). Every resource page now has a description of what the
+  resource is and does, an Example Usage section with named examples covering
+  the ways the resource can be declared, an Argument Reference split into
+  required and optional arguments with a subsection per nested block or complex
+  argument (`config`, `nodes`, `edges` and each condition level, `rule_config`
+  per alert type), an Attribute Reference with an inputs/outputs direction
+  table, and an Import section showing both the `import` block and the CLI
+  form. The provider index page documents authentication, environment
+  variables, the Terraform 1.11 floor and the shared connector `config` shape.
+  Pages are generated from `templates/` and `examples/resources/`;
+  `scripts/check-doc-attributes.sh` fails the build when a schema attribute is
+  missing from its template. No provider behaviour changes.
 - Go SDK pin advanced to the 2026-09-11 generated client
   (`schema_detection_spec.disable_alerting` was missing from the July client).
 

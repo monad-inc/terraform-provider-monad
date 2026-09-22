@@ -15,99 +15,19 @@ Pull connectors run on a schedule and keep their own cursor, so a single input c
 
 ### Synthetic data
 
-```terraform
-# Synthetic CloudTrail events, one record per second. The "demo" input needs
-# no credentials, so it is the quickest way to get data flowing.
-resource "monad_input" "demo" {
-  name        = "CloudTrail (synthetic)"
-  description = "Event Generator producing CloudTrail-shaped records for testing"
-  type        = "demo"
-
-  config {
-    settings = {
-      record_type = "cloudtrail"
-      rate        = 1
-    }
-  }
-}
-```
+{{ tffile "examples/resources/monad_input/resource.tf" }}
 
 ### A connector with no settings
 
-```terraform
-# Some connector types take no settings at all. Omit the config block entirely.
-resource "monad_input" "http" {
-  name        = "HTTP ingest"
-  description = "Records POSTed to the pipeline's ingest endpoint"
-  type        = "monad-http"
-}
-```
+{{ tffile "examples/resources/monad_input/no-settings.tf" }}
 
 ### Pull connector with settings
 
-```terraform
-# A pull connector with settings that reference other Terraform values. Every
-# key under settings is the connector's API field name — see the "API Examples"
-# section of that connector's page in the Monad docs.
-resource "monad_input" "archive" {
-  name        = "CloudTrail archive (S3)"
-  description = "Reads NDJSON CloudTrail objects from the ingest bucket"
-  type        = "s3"
-
-  config {
-    settings = jsondecode(jsonencode({
-      bucket              = var.ingest_bucket
-      region              = "us-west-2"
-      prefix              = "cloudtrail"
-      role_arn            = var.ingest_role_arn
-      compression         = "none"
-      format              = "jsonl"
-      partition_format    = "simple date"
-      backfill_start_time = "2026-01-01T00:00:00Z"
-    }))
-  }
-}
-```
+{{ tffile "examples/resources/monad_input/s3.tf" }}
 
 ### Credentials under `config.secrets`
 
-```terraform
-# Credentials go under config.secrets, keyed by the connector's secret field
-# names. Each value is either a reference to an existing secret ({ id }) or a
-# new secret created inline ({ value, name, description } — all three required).
-# The block is write-only: nothing under secrets is ever stored in state.
-resource "monad_secret" "aws_secret_key" {
-  name  = "s3-archive-secret-key"
-  value = var.aws_secret_access_key
-}
-
-resource "monad_input" "archive_static_creds" {
-  name = "CloudTrail archive (S3, static credentials)"
-  type = "s3"
-
-  config {
-    settings = jsondecode(jsonencode({
-      bucket = var.ingest_bucket
-      region = "us-west-2"
-      prefix = "cloudtrail"
-      format = "jsonl"
-    }))
-
-    secrets = {
-      # Reference a secret managed elsewhere in this configuration.
-      secret_key = { id = monad_secret.aws_secret_key.id }
-
-      # Or create one inline. The secret is stored by name, so rotate the
-      # value by giving it a new name too.
-      access_key = {
-        name        = "s3-archive-access-key"
-        description = "Access key ID for the archive bucket reader"
-        value       = var.aws_access_key_id
-      }
-    }
-  }
-}
-```
+{{ tffile "examples/resources/monad_input/secrets.tf" }}
 
 ## Argument Reference
 
@@ -155,18 +75,10 @@ This resource exports the following attributes in addition to the arguments abov
 
 In Terraform v1.5.0 and later, use an [`import` block](https://developer.hashicorp.com/terraform/language/import) to import inputs using the input `id`. For example:
 
-```terraform
-import {
-  to = monad_input.example
-  id = "8f0c7a2e-4b1d-4c3e-9a6f-2d5e8b7c1a90"
-}
-```
+{{ tffile "examples/resources/monad_input/import-by-string-id.tf" }}
 
 Using `terraform import`, import inputs using the input `id`. For example:
 
-```shell
-# Import an input by its ID (shown in the Monad UI and returned by the API).
-terraform import monad_input.example 8f0c7a2e-4b1d-4c3e-9a6f-2d5e8b7c1a90
-```
+{{ codefile "shell" "examples/resources/monad_input/import.sh" }}
 
 Monad never returns secret material, so an imported input has a null `config.secrets_hash`. If the configuration declares `secrets`, the first plan after import shows a one-time update that re-sends them and records the fingerprint.

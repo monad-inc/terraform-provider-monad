@@ -15,127 +15,19 @@ A transform is a component like any other: it is created once and can be placed 
 
 ### Simple operations
 
-```terraform
-# A transform is an ordered list of operations (at most 20). Each operation
-# names the operation and passes its arguments; the argument names are the ones
-# on that operation's page in the Monad docs.
-resource "monad_transform" "tag_and_trim" {
-  name        = "Tag and trim"
-  description = "Stamps the environment, then drops fields with no IR value"
-
-  config = jsondecode(jsonencode({
-    operations = [
-      {
-        operation = "add"
-        arguments = {
-          key   = "environment"
-          value = "production"
-        }
-      },
-      {
-        operation = "drop_key"
-        arguments = { key = "requestID" }
-      },
-      {
-        operation = "drop_key"
-        arguments = { key = "responseElements.credentials.sessionToken" }
-      },
-    ]
-  }))
-}
-```
+{{ tffile "examples/resources/monad_transform/resource.tf" }}
 
 ### A jq program from a file
 
-```terraform
-# Keep long jq programs in their own file and load them with file(). An empty
-# key replaces the record with the query result; a non-empty key stores the
-# result under that key instead.
-resource "monad_transform" "cloudtrail_to_ecs" {
-  name        = "CloudTrail to ECS"
-  description = "Normalizes CloudTrail into ECS v8.11.0"
-
-  config = jsondecode(jsonencode({
-    operations = [
-      {
-        operation = "jq"
-        arguments = {
-          key   = ""
-          query = file("${path.module}/jq/cloudtrail-to-ecs.jq")
-        }
-      },
-    ]
-  }))
-}
-```
+{{ tffile "examples/resources/monad_transform/jq.tf" }}
 
 ### A jq program templated from other resources
 
-```terraform
-# templatefile() lets a jq program embed values from other resources — here a
-# pipeline-id → name map — so a rebuild updates the transform in place.
-resource "monad_transform" "label_alerts" {
-  name = "Label alerts with pipeline names"
-
-  config = jsondecode(jsonencode({
-    operations = [
-      {
-        operation = "jq"
-        arguments = {
-          key = ""
-          query = templatefile("${path.module}/jq/label-alerts.jq.tftpl", {
-            pipelines_json = jsonencode({
-              (monad_pipeline.cloudtrail.id) = monad_pipeline.cloudtrail.name
-              (monad_pipeline.archive.id)    = monad_pipeline.archive.name
-            })
-          })
-        }
-      },
-    ]
-  }))
-}
-```
+{{ tffile "examples/resources/monad_transform/templatefile.tf" }}
 
 ### An operation that references a secret
 
-```terraform
-# Operations that need key material reference a secret by ID, exactly like a
-# connector does. Here the mask operation's deterministic mode hashes the value
-# under _dedup_key with an HMAC key held in a monad_secret.
-resource "monad_secret" "dedup_hmac_key" {
-  name        = "dedup-hmac-key"
-  description = "HMAC key for the deterministic dedup mask"
-  value       = var.dedup_hmac_key
-}
-
-resource "monad_transform" "fingerprint" {
-  name = "Fingerprint record"
-
-  config = jsondecode(jsonencode({
-    operations = [
-      {
-        operation = "jq"
-        arguments = {
-          key   = "_dedup_key"
-          query = "del(.ingested_at) | tojson"
-        }
-      },
-      {
-        operation = "mask"
-        arguments = {
-          key = "_dedup_key"
-          mode = {
-            type = "deterministic"
-            deterministic = {
-              hash_key = { id = monad_secret.dedup_hmac_key.id }
-            }
-          }
-        }
-      },
-    ]
-  }))
-}
-```
+{{ tffile "examples/resources/monad_transform/mask.tf" }}
 
 ## Argument Reference
 
@@ -182,18 +74,10 @@ This resource exports the following attributes in addition to the arguments abov
 
 In Terraform v1.5.0 and later, use an [`import` block](https://developer.hashicorp.com/terraform/language/import) to import transforms using the transform `id`. For example:
 
-```terraform
-import {
-  to = monad_transform.example
-  id = "c4e2a7b9-1d3f-4b5c-a6d8-e9f0a1b2c3d4"
-}
-```
+{{ tffile "examples/resources/monad_transform/import-by-string-id.tf" }}
 
 Using `terraform import`, import transforms using the transform `id`. For example:
 
-```shell
-# Import a transform by its ID (shown in the Monad UI and returned by the API).
-terraform import monad_transform.example c4e2a7b9-1d3f-4b5c-a6d8-e9f0a1b2c3d4
-```
+{{ codefile "shell" "examples/resources/monad_transform/import.sh" }}
 
 The imported `config` is populated from the API, so `terraform plan -generate-config-out` produces a usable configuration. The first plan after import is clean when the configuration's `config` is semantically equal to the stored one.

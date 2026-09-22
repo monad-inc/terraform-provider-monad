@@ -6,8 +6,8 @@
 
 ## Requirements
 
-- [Terraform](https://www.terraform.io/downloads.html) 0.14.x
-- [Go](https://golang.org/doc/install) 1.21 (to build the provider plugin)
+- [Terraform](https://www.terraform.io/downloads.html) 1.11 or later (write-only arguments)
+- [Go](https://golang.org/doc/install) 1.23 or later (to build the provider plugin; see `go.mod`)
 
 ## Building The Provider
 
@@ -97,7 +97,7 @@ terraform {
 }
 
 provider "monad" {
-  base_url        = "https://beta.monad.com"  # Optional, defaults to this value
+  base_url        = "https://app.monad.com"   # Optional; defaults to https://beta.monad.com
   api_token       = var.monad_api_token       # Can use MONAD_API_TOKEN env var
   organization_id = var.organization_id       # Can use MONAD_ORGANIZATION_ID env var
   use_insecure    = false                     # Can use MONAD_USE_INSECURE env var
@@ -113,79 +113,21 @@ provider "monad" {
 
 ## Resources
 
-### monad_secret
+Full reference documentation — what each resource is, worked examples, argument
+and attribute references, and import syntax — is published on the
+[Terraform Registry](https://registry.terraform.io/providers/monad-inc/monad/latest/docs)
+and generated into [`docs/`](docs/) in this repo:
 
-Manages organization secrets that can be referenced by other resources.
+| Resource | Manages | Docs |
+|----------|---------|------|
+| `monad_input` | A source connector that pulls or receives records | [docs/resources/input.md](docs/resources/input.md) |
+| `monad_transform` | An ordered list of operations applied to each record | [docs/resources/transform.md](docs/resources/transform.md) |
+| `monad_enrichment` | A lookup that adds context to each record | [docs/resources/enrichment.md](docs/resources/enrichment.md) |
+| `monad_output` | A destination connector | [docs/resources/output.md](docs/resources/output.md) |
+| `monad_pipeline` | The graph of nodes and conditional edges connecting them | [docs/resources/pipeline.md](docs/resources/pipeline.md) |
+| `monad_secret` | A credential that components reference by ID | [docs/resources/secret.md](docs/resources/secret.md) |
+| `monad_alert_rule` | A rule that watches pipelines and raises alerts | [docs/resources/alert_rule.md](docs/resources/alert_rule.md) |
 
-- `name` (string, required) - Name of the secret
-- `description` (string, optional) - Description of the secret
-- `value` (string, required, sensitive, write-only) - Secret value. Write-only: sent to the Monad API but never stored in Terraform state.
-- `value_hash` (string, computed) - HMAC fingerprint of `value`, used to detect a rotated secret. Changing `value` marks it unknown at plan and sends the new value on apply.
-
-### monad_pipeline
-
-Manages data pipelines that connect inputs to outputs with conditional logic.
-
-- `name` (string, required) - Name of the pipeline
-- `description` (string, optional) - Description of the pipeline
-- `enabled` (bool, optional) - Whether the pipeline is enabled (defaults to true)
-- `nodes` (block set) - Pipeline nodes configuration (order not significant)
-- `edges` (block set) - Pipeline edge connections (order not significant)
-  - `schema_detection_spec` (block, optional) - Schema drift detection for the edge: `enabled`, `disable_alerting` (omit rather than writing `false`). Omitting the block means detection is off, and the API rebuilds edges on every save, so declare it wherever detection should stay on.
-
-### monad_input
-
-Generic input connector for data sources.
-
-- `name` (string, required) - Name of the input
-- `description` (string, optional) - Description of the input
-- `type` (string, required) - Type of input connector (e.g., "demo", "okta-systemlog")
-- `config` (block, optional) - Input configuration
-  - `settings` (dynamic, optional) - Connector settings
-  - `secrets` (dynamic, optional, sensitive, write-only) - Connector secrets; sent to the API but never stored in state. Supply a new secret `{ value, name, description }` or a reference `{ id }`.
-  - `secrets_hash` (string, computed) - HMAC fingerprint of `secrets`, used to detect rotation.
-
-### monad_output
-
-Generic output connector for data destinations.
-
-- `name` (string, required) - Name of the output
-- `description` (string, optional) - Description of the output
-- `type` (string, required) - Type of output connector (e.g., "dev-null", "http")
-- `config` (block, optional) - Output configuration
-  - `settings` (dynamic, optional) - Connector settings
-  - `secrets` (dynamic, optional, sensitive, write-only) - Connector secrets; sent to the API but never stored in state. Supply a new secret `{ value, name, description }` or a reference `{ id }`.
-  - `secrets_hash` (string, computed) - HMAC fingerprint of `secrets`, used to detect rotation.
-
-### monad_transform
-
-Generic transform for data transformations.
-
-- `name` (string, required) - Name of the transform
-- `description` (string, optional) - Description of the transform
-- `config` (dynamic, required) - Transform configuration (e.g. `jsondecode(...)` of an `operations` array)
-
-### monad_alert_rule
-
-Alert rule that watches pipelines (or the whole org) and fires on a condition.
-
-- `name` (string, required) - Name of the alert rule
-- `type` (string, required) - Alert rule type (e.g. `threshold-alert`); immutable — changing it forces replacement
-- `rule_config` (dynamic, required) - Type-specific configuration, validated by the API on write (e.g. `jsondecode(jsonencode({ settings = { ... } }))`)
-- `description` (string, optional) - Description of the alert rule
-- `severity` (string, required) - Severity; required, validated against `critical`, `high`, `medium`, `low`, `info`
-- `active` (bool, optional, computed) - Whether the rule is active; defaults to `true`
-- `pipeline_ids` (set of string, optional) - Pipelines the rule watches; omit for org-level alert types
-- `id` (string, computed) - Alert rule identifier
-
-### monad_enrichment
-
-Generic enrichment connector for data enrichment.
-
-- `name` (string, required) - Name of the enrichment
-- `description` (string, optional) - Description of the enrichment
-- `type` (string, required) - Type of enrichment connector
-- `config` (block, optional) - Enrichment configuration
-  - `settings` (dynamic, optional) - Connector settings
-  - `secrets` (dynamic, optional, sensitive, write-only) - Connector secrets; sent to the API but never stored in state. Supply a new secret `{ value, name, description }` or a reference `{ id }`.
-  - `secrets_hash` (string, computed) - HMAC fingerprint of `secrets`, used to detect rotation.
+The pages are generated by `task generate` from `templates/` and `examples/` —
+edit those, not `docs/`. See [`CLAUDE.md`](CLAUDE.md#docs-are-generated--from-hand-written-templates)
+for the workflow and `scripts/check-doc-attributes.sh` for the schema-coverage check.
