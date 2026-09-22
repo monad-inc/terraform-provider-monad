@@ -7,11 +7,16 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"reflect"
+	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -39,6 +44,44 @@ func getResponseBody(resp *http.Response) []byte {
 // from state and recreated on the next plan rather than wedging plan/apply on
 // refresh (ENG-9259). Once ENG-9258 ships the 404, the sentinel branch becomes
 // redundant and can be removed.
+// isTimeoutError reports whether err is the client giving up on a request --
+// the HTTP client's per-request timeout, a cancelled/expired context, or any
+// net.Error that reports Timeout(). The SDK returns transport failures
+// unwrapped (a *url.Error), so errors.As finds them directly.
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	// net/http reports a Client.Timeout as a *url.Error whose Timeout() is true
+	// (handled above) but older paths surface only the message; match it too.
+	return strings.Contains(err.Error(), "Client.Timeout exceeded")
+}
+
+// withOperationTimeout derives the context an API operation runs under from
+// the resource's `timeouts { … }` block (get is one of timeouts.Value.Create /
+// Read / Update / Delete), falling back to the provider-level request_timeout.
+// The returned cancel must be deferred by the caller.
+func withOperationTimeout(
+	ctx context.Context,
+	get func(context.Context, time.Duration) (time.Duration, diag.Diagnostics),
+	fallback time.Duration,
+	diags *diag.Diagnostics,
+) (context.Context, context.CancelFunc) {
+	d, ds := get(ctx, fallback)
+	diags.Append(ds...)
+	if diags.HasError() || d <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, d)
+}
+
 func isNotFoundResponse(resp *http.Response, body []byte) bool {
 	if resp != nil {
 		switch resp.StatusCode {
