@@ -12,12 +12,12 @@ resource "monad_input" "archive_static_creds" {
   type = "s3"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       bucket = var.ingest_bucket
       region = "us-west-2"
       prefix = "cloudtrail"
       format = "jsonl"
-    }))
+    }
 
     secrets = {
       # Reference a secret managed elsewhere in this configuration.

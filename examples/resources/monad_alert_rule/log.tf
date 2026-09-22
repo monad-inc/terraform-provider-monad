@@ -5,7 +5,7 @@ resource "monad_alert_rule" "schema_mismatch_logged" {
   type     = "monad-log-alert"
   severity = "medium"
 
-  rule_config = jsondecode(jsonencode({
+  rule_config = {
     settings = {
       log_type = "pipeline"
       levels   = ["error", "fatal"]
@@ -15,5 +15,5 @@ resource "monad_alert_rule" "schema_mismatch_logged" {
       }
       dedupe_window = "30m"
     }
-  }))
+  }
 }

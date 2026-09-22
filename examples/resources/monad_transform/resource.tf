@@ -5,7 +5,7 @@ resource "monad_transform" "tag_and_trim" {
   name        = "Tag and trim"
   description = "Stamps the environment, then drops fields with no IR value"
 
-  config = jsondecode(jsonencode({
+  config = {
     operations = [
       {
         operation = "add"
@@ -23,5 +23,5 @@ resource "monad_transform" "tag_and_trim" {
         arguments = { key = "responseElements.credentials.sessionToken" }
       },
     ]
-  }))
+  }
 }

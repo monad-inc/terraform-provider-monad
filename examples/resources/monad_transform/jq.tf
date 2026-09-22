@@ -5,7 +5,7 @@ resource "monad_transform" "cloudtrail_to_ecs" {
   name        = "CloudTrail to ECS"
   description = "Normalizes CloudTrail into ECS v8.11.0"
 
-  config = jsondecode(jsonencode({
+  config = {
     operations = [
       {
         operation = "jq"
@@ -15,5 +15,5 @@ resource "monad_transform" "cloudtrail_to_ecs" {
         }
       },
     ]
-  }))
+  }
 }

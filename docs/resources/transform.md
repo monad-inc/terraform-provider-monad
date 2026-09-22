@@ -23,7 +23,7 @@ resource "monad_transform" "tag_and_trim" {
   name        = "Tag and trim"
   description = "Stamps the environment, then drops fields with no IR value"
 
-  config = jsondecode(jsonencode({
+  config = {
     operations = [
       {
         operation = "add"
@@ -41,7 +41,7 @@ resource "monad_transform" "tag_and_trim" {
         arguments = { key = "responseElements.credentials.sessionToken" }
       },
     ]
-  }))
+  }
 }
 ```
 
@@ -55,7 +55,7 @@ resource "monad_transform" "cloudtrail_to_ecs" {
   name        = "CloudTrail to ECS"
   description = "Normalizes CloudTrail into ECS v8.11.0"
 
-  config = jsondecode(jsonencode({
+  config = {
     operations = [
       {
         operation = "jq"
@@ -65,7 +65,7 @@ resource "monad_transform" "cloudtrail_to_ecs" {
         }
       },
     ]
-  }))
+  }
 }
 ```
 
@@ -77,7 +77,7 @@ resource "monad_transform" "cloudtrail_to_ecs" {
 resource "monad_transform" "label_alerts" {
   name = "Label alerts with pipeline names"
 
-  config = jsondecode(jsonencode({
+  config = {
     operations = [
       {
         operation = "jq"
@@ -92,7 +92,7 @@ resource "monad_transform" "label_alerts" {
         }
       },
     ]
-  }))
+  }
 }
 ```
 
@@ -111,7 +111,7 @@ resource "monad_secret" "dedup_hmac_key" {
 resource "monad_transform" "fingerprint" {
   name = "Fingerprint record"
 
-  config = jsondecode(jsonencode({
+  config = {
     operations = [
       {
         operation = "jq"
@@ -133,7 +133,7 @@ resource "monad_transform" "fingerprint" {
         }
       },
     ]
-  }))
+  }
 }
 ```
 
@@ -151,7 +151,7 @@ The following arguments are optional:
 
 ### `config` Argument
 
-`config` is a free-form value shaped like the transform configuration the Monad API accepts. Build it with `jsondecode(jsonencode({ ... }))`, which keeps every element of the `operations` list the same Terraform type even when their `arguments` differ.
+`config` is a free-form value shaped like the transform configuration the Monad API accepts. Write it as a plain HCL object. A list literal whose elements have different `arguments` shapes is an ordinary tuple and needs no special handling; `jsondecode(jsonencode({ ... }))`, which older examples wrapped around it, is a no-op for a literal and makes the whole `config` `(sensitive value)` in the plan if any part of it is sensitive.
 
 * `operations` - (Required) Ordered list of at most 20 operations. Each element is an object:
     * `operation` - (Required) The operation name as the transforms catalog spells it, for example `add`, `drop_key`, `jq`, `mask`, `hash`, `flatten`, `convert_timestamp`.

@@ -7,7 +7,7 @@ resource "monad_input" "archive" {
   type        = "s3"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       bucket              = var.ingest_bucket
       region              = "us-west-2"
       prefix              = "cloudtrail"
@@ -16,6 +16,6 @@ resource "monad_input" "archive" {
       format              = "jsonl"
       partition_format    = "simple date"
       backfill_start_time = "2026-01-01T00:00:00Z"
-    }))
+    }
   }
 }

@@ -6,10 +6,10 @@ resource "monad_alert_rule" "erroring" {
   severity = "high"
   active   = true
 
-  rule_config = jsondecode(jsonencode({
+  rule_config = {
     settings = {
       status      = "Erroring"
       time_window = "5m"
     }
-  }))
+  }
 }

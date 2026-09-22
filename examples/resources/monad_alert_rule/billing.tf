@@ -4,9 +4,9 @@ resource "monad_alert_rule" "budget" {
   type     = "billing-metrics-cost-budget"
   severity = "high"
 
-  rule_config = jsondecode(jsonencode({
+  rule_config = {
     settings = {
       usd_amount = 5000
     }
-  }))
+  }
 }

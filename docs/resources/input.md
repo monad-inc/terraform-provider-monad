@@ -55,7 +55,7 @@ resource "monad_input" "archive" {
   type        = "s3"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       bucket              = var.ingest_bucket
       region              = "us-west-2"
       prefix              = "cloudtrail"
@@ -64,7 +64,7 @@ resource "monad_input" "archive" {
       format              = "jsonl"
       partition_format    = "simple date"
       backfill_start_time = "2026-01-01T00:00:00Z"
-    }))
+    }
   }
 }
 ```
@@ -86,12 +86,12 @@ resource "monad_input" "archive_static_creds" {
   type = "s3"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       bucket = var.ingest_bucket
       region = "us-west-2"
       prefix = "cloudtrail"
       format = "jsonl"
-    }))
+    }
 
     secrets = {
       # Reference a secret managed elsewhere in this configuration.
@@ -126,7 +126,7 @@ The following arguments are optional:
 
 The `config` block supports the following:
 
-* `settings` - (Optional) The connector's settings as a free-form value. Keys are the connector's API field names, documented on its page in the [Monad inputs catalog](https://app.monad.com/docs/inputs) — the "API Examples" section shows the exact JSON. Any HCL object works; wrap it in `jsondecode(jsonencode({ ... }))` when the object mixes value types or must be `{}`.
+* `settings` - (Optional) The connector's settings as a free-form value. Keys are the connector's API field names, documented on its page in the [Monad inputs catalog](https://app.monad.com/docs/inputs) — the "API Examples" section shows the exact JSON. Write it as a plain HCL object; the provider sends whatever Terraform type the expression produces and hands the same value back after apply. Wrapping the value in `jsondecode(jsonencode({ ... }))` is a no-op for a literal and is only useful to flatten a set or map that arrives from a typed variable or another resource's attribute into JSON arrays and objects — and it has a cost: one sensitive value inside makes the whole object `(sensitive value)` in the plan.
 * `secrets` - (Optional, Sensitive, Write-only) The connector's credentials as a map keyed by the connector's secret field names. Each value is one of:
     * `{ id = "..." }` — a reference to an existing secret, usually `monad_secret.example.id`.
     * `{ name = "...", description = "...", value = "..." }` — a new secret created inline, all three non-empty. Monad stores inline secrets by name, so give a rotated value a new name too.

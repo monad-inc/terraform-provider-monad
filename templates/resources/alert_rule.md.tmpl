@@ -55,7 +55,7 @@ The following arguments are optional:
 
 ### `rule_config` Argument
 
-`rule_config` is a free-form value with a single `settings` object whose fields depend on `type`. The API validates it on write, so a mistake surfaces at apply rather than silently. Build it with `jsondecode(jsonencode({ settings = { ... } }))`. The per-type `settings` are:
+`rule_config` is a free-form value with a single `settings` object whose fields depend on `type`. The API validates it on write, so a mistake surfaces at apply rather than silently. Write it as a plain HCL object; the `jsondecode(jsonencode({ ... }))` wrapper seen in older examples is a no-op for a literal. The per-type `settings` are:
 
 #### `threshold-alert`
 

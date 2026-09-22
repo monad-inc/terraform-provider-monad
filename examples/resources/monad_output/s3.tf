@@ -5,7 +5,7 @@ resource "monad_output" "archive" {
   type        = "s3"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       role_arn         = var.archive_role_arn
       bucket           = var.archive_bucket
       region           = "us-west-2"
@@ -21,6 +21,6 @@ resource "monad_output" "archive" {
         batch_data_size    = 1048576
         publish_rate       = 5
       }
-    }))
+    }
   }
 }

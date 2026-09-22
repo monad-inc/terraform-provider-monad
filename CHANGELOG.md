@@ -4,6 +4,22 @@ All notable changes to this provider are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/). While the provider is pre-1.0,
 breaking changes are released as minor version bumps.
 
+## Unreleased
+
+### Changed
+
+- **Documentation: `settings` / `config` / `rule_config` values are written as
+  plain HCL objects.** The registry pages and every example wrapped them in
+  `jsondecode(jsonencode({ ... }))` and described that as required when the
+  object "mixes value types" or "must be `{}`". Neither is true: for a literal
+  the wrapper is a no-op (Terraform produces the same object/tuple type either
+  way), and it has a cost — a single sensitive value inside makes the whole
+  object `(sensitive value)` in the plan. The pages now say when the wrapper
+  is actually useful (flattening a set or map that arrives from a typed
+  variable or another resource's attribute into JSON arrays and objects) and
+  the examples use plain literals. The `monad_alert_rule.rule_config` schema
+  description drops the same advice. No provider behaviour changes.
+
 ## 0.5.0
 
 ### Added

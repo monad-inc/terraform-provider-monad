@@ -7,11 +7,11 @@ resource "monad_alert_rule" "error_rate" {
 
   pipeline_ids = [monad_pipeline.basic.id, monad_pipeline.routed.id]
 
-  rule_config = jsondecode(jsonencode({
+  rule_config = {
     settings = {
       threshold   = 5.0
       time_window = "1h"
       min_records = 100
     }
-  }))
+  }
 }

@@ -11,10 +11,10 @@ resource "monad_enrichment" "ip_reputation" {
   type = "greynoise-community"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       ip_address_path  = "source.ip"
       destination_path = "enrichment.greynoise"
-    }))
+    }
 
     secrets = {
       api_key = { id = monad_secret.greynoise.id }

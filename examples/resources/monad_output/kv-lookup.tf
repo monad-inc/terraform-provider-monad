@@ -6,10 +6,10 @@ resource "monad_output" "dedup_store" {
   type        = "kv-lookup"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       key_field   = "_dedup_key"
       value_field = "_dedup_key"
       ttl         = 172800
-    }))
+    }
   }
 }
