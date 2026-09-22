@@ -7,7 +7,7 @@ resource "monad_alert_rule" "egress_stalled" {
 
   pipeline_ids = [monad_pipeline.routed.id]
 
-  rule_config = jsondecode(jsonencode({
+  rule_config = {
     settings = {
       metric_config = {
         type = "bytes"
@@ -20,5 +20,5 @@ resource "monad_alert_rule" "egress_stalled" {
       operator    = "less_than"
       time_window = "1h"
     }
-  }))
+  }
 }

@@ -1,6 +1,6 @@
 # Fire when a pipeline ingests more than 10,000 records in five minutes.
 # rule_config is free-form: each alert type has its own settings schema, which
-# the API validates on write. Build it with jsondecode(jsonencode({...})).
+# the API validates on write. Write it as a plain HCL object.
 resource "monad_alert_rule" "ingest_spike" {
   name        = "CloudTrail — ingest volume spike"
   description = "More than 10,000 records ingested in a 5-minute window"
@@ -9,7 +9,7 @@ resource "monad_alert_rule" "ingest_spike" {
 
   pipeline_ids = [monad_pipeline.basic.id]
 
-  rule_config = jsondecode(jsonencode({
+  rule_config = {
     settings = {
       metric_config = {
         type = "records"
@@ -21,5 +21,5 @@ resource "monad_alert_rule" "ingest_spike" {
       operator    = "greater_than"
       time_window = "5m"
     }
-  }))
+  }
 }

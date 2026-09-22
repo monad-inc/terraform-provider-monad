@@ -43,7 +43,7 @@ The following arguments are optional:
 
 ### `config` Argument
 
-`config` is a free-form value shaped like the transform configuration the Monad API accepts. Build it with `jsondecode(jsonencode({ ... }))`, which keeps every element of the `operations` list the same Terraform type even when their `arguments` differ.
+`config` is a free-form value shaped like the transform configuration the Monad API accepts. Write it as a plain HCL object. A list literal whose elements have different `arguments` shapes is an ordinary tuple and needs no special handling; `jsondecode(jsonencode({ ... }))`, which older examples wrapped around it, is a no-op for a literal and makes the whole `config` `(sensitive value)` in the plan if any part of it is sensitive.
 
 * `operations` - (Required) Ordered list of at most 20 operations. Each element is an object:
     * `operation` - (Required) The operation name as the transforms catalog spells it, for example `add`, `drop_key`, `jq`, `mask`, `hash`, `flatten`, `convert_timestamp`.

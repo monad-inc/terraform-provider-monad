@@ -5,10 +5,10 @@ resource "monad_output" "asset_inventory" {
   type = "kv-lookup"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       key_field = "asset_id" # omit value_field to store the whole record
       ttl       = 172800
-    }))
+    }
   }
 }
 
@@ -18,11 +18,11 @@ resource "monad_enrichment" "asset_context" {
   type        = "kv-lookup"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       kv_lookup_output_id  = monad_output.asset_inventory.id
       join_path            = "asset.id"
       destination_key      = "enrichment.asset"
       error_on_missing_key = false
-    }))
+    }
   }
 }

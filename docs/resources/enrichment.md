@@ -23,10 +23,10 @@ resource "monad_output" "asset_inventory" {
   type = "kv-lookup"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       key_field = "asset_id" # omit value_field to store the whole record
       ttl       = 172800
-    }))
+    }
   }
 }
 
@@ -36,12 +36,12 @@ resource "monad_enrichment" "asset_context" {
   type        = "kv-lookup"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       kv_lookup_output_id  = monad_output.asset_inventory.id
       join_path            = "asset.id"
       destination_key      = "enrichment.asset"
       error_on_missing_key = false
-    }))
+    }
   }
 }
 ```
@@ -62,10 +62,10 @@ resource "monad_enrichment" "ip_reputation" {
   type = "greynoise-community"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       ip_address_path  = "source.ip"
       destination_path = "enrichment.greynoise"
-    }))
+    }
 
     secrets = {
       api_key = { id = monad_secret.greynoise.id }
@@ -91,7 +91,7 @@ The following arguments are optional:
 
 The `config` block supports the following:
 
-* `settings` - (Optional) The enrichment's settings as a free-form value. Keys are the enrichment's API field names, documented on its page in the [Monad enrichments catalog](https://app.monad.com/docs/enrichments). For `kv-lookup`, `kv_lookup_output_id` takes the `id` of a `monad_output` of type `kv-lookup`.
+* `settings` - (Optional) The enrichment's settings as a free-form value. Keys are the enrichment's API field names, documented on its page in the [Monad enrichments catalog](https://app.monad.com/docs/enrichments). For `kv-lookup`, `kv_lookup_output_id` takes the `id` of a `monad_output` of type `kv-lookup`. Write it as a plain HCL object; the provider sends whatever Terraform type the expression produces and hands the same value back after apply. Wrapping the value in `jsondecode(jsonencode({ ... }))` is a no-op for a literal and is only useful to flatten a set or map that arrives from a typed variable or another resource's attribute into JSON arrays and objects — and it has a cost: one sensitive value inside makes the whole object `(sensitive value)` in the plan.
 * `secrets` - (Optional, Sensitive, Write-only) The enrichment's credentials as a map keyed by its secret field names. Each value is either a reference `{ id = "..." }` or a new inline secret `{ name = "...", description = "...", value = "..." }` (all three non-empty). Write-only: sent to the API, never stored in state. Rotation is detected through `secrets_hash`.
 
 ## Attribute Reference

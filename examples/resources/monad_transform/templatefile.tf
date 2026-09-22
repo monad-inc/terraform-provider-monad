@@ -3,7 +3,7 @@
 resource "monad_transform" "label_alerts" {
   name = "Label alerts with pipeline names"
 
-  config = jsondecode(jsonencode({
+  config = {
     operations = [
       {
         operation = "jq"
@@ -18,5 +18,5 @@ resource "monad_transform" "label_alerts" {
         }
       },
     ]
-  }))
+  }
 }

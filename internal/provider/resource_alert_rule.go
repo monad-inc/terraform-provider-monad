@@ -143,8 +143,8 @@ func (r *ResourceAlertRule) Schema(
 			"rule_config": schema.DynamicAttribute{
 				MarkdownDescription: "Type-specific alert rule configuration. Each alert type has " +
 					"its own settings schema, validated by the API on write, so this is modeled as " +
-					"a free-form dynamic/JSON value (like monad_transform.config). Build it with " +
-					"`jsondecode(jsonencode({ ... }))`.",
+					"a free-form dynamic/JSON value (like monad_transform.config), written as a plain " +
+					"HCL object.",
 				Required: true,
 				// Keep prior state when the config is semantically equal, so the
 				// first plan after `terraform import` is clean instead of

@@ -12,7 +12,7 @@ resource "monad_output" "slack" {
   type        = "slack"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       auth_config = {
         type = "webhook"
         webhook = {
@@ -20,6 +20,6 @@ resource "monad_output" "slack" {
         }
       }
       message_template = file("${path.module}/slack-alert-template.tmpl")
-    }))
+    }
   }
 }

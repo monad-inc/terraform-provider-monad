@@ -18,7 +18,7 @@ Each rule has a **type**, a **severity**, the **pipelines** it watches, and a ty
 ```terraform
 # Fire when a pipeline ingests more than 10,000 records in five minutes.
 # rule_config is free-form: each alert type has its own settings schema, which
-# the API validates on write. Build it with jsondecode(jsonencode({...})).
+# the API validates on write. Write it as a plain HCL object.
 resource "monad_alert_rule" "ingest_spike" {
   name        = "CloudTrail — ingest volume spike"
   description = "More than 10,000 records ingested in a 5-minute window"
@@ -27,7 +27,7 @@ resource "monad_alert_rule" "ingest_spike" {
 
   pipeline_ids = [monad_pipeline.basic.id]
 
-  rule_config = jsondecode(jsonencode({
+  rule_config = {
     settings = {
       metric_config = {
         type = "records"
@@ -39,7 +39,7 @@ resource "monad_alert_rule" "ingest_spike" {
       operator    = "greater_than"
       time_window = "5m"
     }
-  }))
+  }
 }
 ```
 
@@ -55,7 +55,7 @@ resource "monad_alert_rule" "egress_stalled" {
 
   pipeline_ids = [monad_pipeline.routed.id]
 
-  rule_config = jsondecode(jsonencode({
+  rule_config = {
     settings = {
       metric_config = {
         type = "bytes"
@@ -68,7 +68,7 @@ resource "monad_alert_rule" "egress_stalled" {
       operator    = "less_than"
       time_window = "1h"
     }
-  }))
+  }
 }
 ```
 
@@ -83,12 +83,12 @@ resource "monad_alert_rule" "erroring" {
   severity = "high"
   active   = true
 
-  rule_config = jsondecode(jsonencode({
+  rule_config = {
     settings = {
       status      = "Erroring"
       time_window = "5m"
     }
-  }))
+  }
 }
 ```
 
@@ -104,13 +104,13 @@ resource "monad_alert_rule" "error_rate" {
 
   pipeline_ids = [monad_pipeline.basic.id, monad_pipeline.routed.id]
 
-  rule_config = jsondecode(jsonencode({
+  rule_config = {
     settings = {
       threshold   = 5.0
       time_window = "1h"
       min_records = 100
     }
-  }))
+  }
 }
 ```
 
@@ -124,7 +124,7 @@ resource "monad_alert_rule" "schema_mismatch_logged" {
   type     = "monad-log-alert"
   severity = "medium"
 
-  rule_config = jsondecode(jsonencode({
+  rule_config = {
     settings = {
       log_type = "pipeline"
       levels   = ["error", "fatal"]
@@ -134,7 +134,7 @@ resource "monad_alert_rule" "schema_mismatch_logged" {
       }
       dedupe_window = "30m"
     }
-  }))
+  }
 }
 ```
 
@@ -147,11 +147,11 @@ resource "monad_alert_rule" "budget" {
   type     = "billing-metrics-cost-budget"
   severity = "high"
 
-  rule_config = jsondecode(jsonencode({
+  rule_config = {
     settings = {
       usd_amount = 5000
     }
-  }))
+  }
 }
 ```
 
@@ -173,7 +173,7 @@ The following arguments are optional:
 
 ### `rule_config` Argument
 
-`rule_config` is a free-form value with a single `settings` object whose fields depend on `type`. The API validates it on write, so a mistake surfaces at apply rather than silently. Build it with `jsondecode(jsonencode({ settings = { ... } }))`. The per-type `settings` are:
+`rule_config` is a free-form value with a single `settings` object whose fields depend on `type`. The API validates it on write, so a mistake surfaces at apply rather than silently. Write it as a plain HCL object; the `jsondecode(jsonencode({ ... }))` wrapper seen in older examples is a no-op for a literal. The per-type `settings` are:
 
 #### `threshold-alert`
 

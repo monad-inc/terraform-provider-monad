@@ -35,7 +35,7 @@ resource "monad_output" "archive" {
   type        = "s3"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       role_arn         = var.archive_role_arn
       bucket           = var.archive_bucket
       region           = "us-west-2"
@@ -51,7 +51,7 @@ resource "monad_output" "archive" {
         batch_data_size    = 1048576
         publish_rate       = 5
       }
-    }))
+    }
   }
 }
 ```
@@ -73,7 +73,7 @@ resource "monad_output" "slack" {
   type        = "slack"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       auth_config = {
         type = "webhook"
         webhook = {
@@ -81,7 +81,7 @@ resource "monad_output" "slack" {
         }
       }
       message_template = file("${path.module}/slack-alert-template.tmpl")
-    }))
+    }
   }
 }
 ```
@@ -97,11 +97,11 @@ resource "monad_output" "dedup_store" {
   type        = "kv-lookup"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       key_field   = "_dedup_key"
       value_field = "_dedup_key"
       ttl         = 172800
-    }))
+    }
   }
 }
 ```
@@ -123,7 +123,7 @@ The following arguments are optional:
 
 The `config` block supports the following:
 
-* `settings` - (Optional) The connector's settings as a free-form value. Keys are the connector's API field names, documented on its page in the [Monad outputs catalog](https://app.monad.com/docs/outputs). Nested objects (format, batching, authentication variants) are written as nested HCL objects. Any HCL value works; wrap it in `jsondecode(jsonencode({ ... }))` when the object mixes value types or must be `{}`.
+* `settings` - (Optional) The connector's settings as a free-form value. Keys are the connector's API field names, documented on its page in the [Monad outputs catalog](https://app.monad.com/docs/outputs). Nested objects (format, batching, authentication variants) are written as nested HCL objects. Write it as a plain HCL object; the provider sends whatever Terraform type the expression produces and hands the same value back after apply. Wrapping the value in `jsondecode(jsonencode({ ... }))` is a no-op for a literal and is only useful to flatten a set or map that arrives from a typed variable or another resource's attribute into JSON arrays and objects — and it has a cost: one sensitive value inside makes the whole object `(sensitive value)` in the plan.
 * `secrets` - (Optional, Sensitive, Write-only) The connector's credentials as a map keyed by the connector's secret field names. Each value is either a reference `{ id = "..." }` or a new inline secret `{ name = "...", description = "...", value = "..." }` (all three non-empty). Write-only: sent to the API, never stored in state. Some connectors take the `{ id }` reference inside `settings` instead (the Slack example above); the connector's docs page says which.
 
 ## Attribute Reference

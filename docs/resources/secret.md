@@ -42,11 +42,11 @@ resource "monad_output" "archive" {
   type = "s3"
 
   config {
-    settings = jsondecode(jsonencode({
+    settings = {
       bucket = var.archive_bucket
       region = "us-west-2"
       prefix = "archive"
-    }))
+    }
 
     secrets = {
       access_key = { id = monad_secret.archive_access_key.id }

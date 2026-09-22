@@ -10,7 +10,7 @@ resource "monad_secret" "dedup_hmac_key" {
 resource "monad_transform" "fingerprint" {
   name = "Fingerprint record"
 
-  config = jsondecode(jsonencode({
+  config = {
     operations = [
       {
         operation = "jq"
@@ -32,5 +32,5 @@ resource "monad_transform" "fingerprint" {
         }
       },
     ]
-  }))
+  }
 }
