@@ -330,6 +330,41 @@ resource "monad_pipeline" "staged" {
 }
 ```
 
+### A longer create budget
+
+```terraform
+# Pipeline creation is serialized on the API side, so a large apply can push
+# individual creates past the provider's request_timeout. Give this resource
+# its own budget rather than raising the provider-wide one.
+resource "monad_pipeline" "big_fanout" {
+  name = "CloudTrail fan-out"
+
+  timeouts {
+    create = "10m"
+    update = "10m"
+  }
+
+  nodes {
+    slug           = "source"
+    component_type = "input"
+    component_id   = monad_input.demo.id
+  }
+  nodes {
+    slug           = "archive"
+    component_type = "output"
+    component_id   = monad_output.archive.id
+  }
+
+  edges {
+    from_node_instance_slug = "source"
+    to_node_instance_slug   = "archive"
+    condition {
+      operator = "always"
+    }
+  }
+}
+```
+
 ## Argument Reference
 
 The following arguments are required:
@@ -342,6 +377,7 @@ The following arguments are optional:
 * `enabled` - (Optional) Whether the pipeline processes data. Omitted, the pipeline adopts the server default (`true`) and later out-of-band changes are adopted rather than reverted; set it explicitly to have Terraform enforce a value. Toggling it is an in-place update.
 * `nodes` - (Optional) Set of `nodes` blocks, one per component in the graph. [See below](#nodes-block).
 * `edges` - (Optional) Set of `edges` blocks, one per connection between nodes. [See below](#edges-block).
+* `timeouts` - (Optional) Operation timeouts for this resource. [See below](#timeouts).
 
 ### `nodes` Block
 
@@ -432,7 +468,21 @@ This resource exports the following attributes in addition to the arguments abov
 | `enabled` | Input and output | Optional; adopts the server value when omitted, so out-of-band toggles are adopted, not reverted |
 | `nodes` | Input | Set; server-generated slugs and node-instance IDs are not surfaced |
 | `edges` | Input | Set; refreshed from the API on read |
+| `timeouts` | Input | Provider-side deadlines; never sent to the API |
 | `id` | Output | |
+
+## Timeouts
+
+[Configuration options](https://developer.hashicorp.com/terraform/language/resources/syntax#operation-timeouts):
+
+* `create` - (Default: the provider's `request_timeout`, `5m` unless set)
+* `read` - (Default: the provider's `request_timeout`, `5m` unless set)
+* `update` - (Default: the provider's `request_timeout`, `5m` unless set)
+* `delete` - (Default: the provider's `request_timeout`, `5m` unless set)
+
+Each operation runs under its own deadline. A value here may exceed the provider default, so one slow pipeline can be given more time without raising the budget for every call.
+
+A pipeline create that outlives its `create` timeout is not simply reported as failed. Pipeline creation is serialized on the API side, so a burst of concurrent creates (Terraform's default `-parallelism=10`) can push the tail past the budget while the API finishes the create anyway. The provider then polls the organization's pipelines for up to two minutes for a same-named pipeline created since the request started: exactly one match is adopted into state with a warning, none is reported as "not created, safe to retry", and several are listed with a request to `terraform import` the right one rather than guess.
 
 ## Import
 

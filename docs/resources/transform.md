@@ -147,6 +147,7 @@ The following arguments are required:
 The following arguments are optional:
 
 * `description` - (Optional) Free-text description.
+* `timeouts` - (Optional) Operation timeouts for this resource. [See below](#timeouts).
 
 ### `config` Argument
 
@@ -176,7 +177,19 @@ This resource exports the following attributes in addition to the arguments abov
 | `name` | Input | |
 | `description` | Input | |
 | `config` | Input | Refreshed from the API on read; compared semantically |
+| `timeouts` | Input | Provider-side deadlines; never sent to the API |
 | `id` | Output | |
+
+## Timeouts
+
+[Configuration options](https://developer.hashicorp.com/terraform/language/resources/syntax#operation-timeouts):
+
+* `create` - (Default: the provider's `request_timeout`, `5m` unless set)
+* `read` - (Default: the provider's `request_timeout`, `5m` unless set)
+* `update` - (Default: the provider's `request_timeout`, `5m` unless set)
+* `delete` - (Default: the provider's `request_timeout`, `5m` unless set)
+
+Each operation runs under its own deadline. A value here may exceed the provider default, so one slow transform can be given more time without raising the budget for every call.
 
 ## Import
 

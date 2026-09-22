@@ -36,7 +36,8 @@ while IFS= read -r line; do
   tmpls="${line#*:}"
   [ -f "$src" ] || { echo "no such schema file: $src" >&2; exit 2; }
   # Attribute and block declarations look like:   "name": schema.StringAttribute{
-  attrs=$(grep -oE '^[[:space:]]*"[a-z_]+":[[:space:]]*schema\.' "$src" \
+  # and the framework-timeouts block like:        "timeouts": timeouts.Block(
+  attrs=$(grep -oE '^[[:space:]]*"[a-z_]+":[[:space:]]*(schema|timeouts)\.' "$src" \
     | sed -E 's/^[[:space:]]*"([a-z_]+)".*/\1/' | sort -u)
   for tmpl in $tmpls; do
     [ -f "$tmpl" ] || { echo "no such template: $tmpl" >&2; exit 2; }

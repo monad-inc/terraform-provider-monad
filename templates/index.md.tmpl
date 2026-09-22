@@ -67,6 +67,7 @@ Each configuration argument can instead come from an environment variable, which
 | `organization_id` | `MONAD_ORGANIZATION_ID`  |
 | `base_url`        | `MONAD_BASE_URL`         |
 | `use_insecure`    | `MONAD_USE_INSECURE`     |
+| `request_timeout` | `MONAD_REQUEST_TIMEOUT`  |
 
 An explicit argument takes precedence over its environment variable. `api_token` and `organization_id` are required by one route or the other; the provider fails to configure without them.
 
@@ -80,6 +81,7 @@ This provider supports the following arguments:
 * `organization_id` - (Optional) ID of the organization every resource is created in. Falls back to `MONAD_ORGANIZATION_ID`. Required by one of the two routes.
 * `base_url` - (Optional) Base URL of the Monad platform, **without** the `/api` suffix — the provider appends it. Falls back to `MONAD_BASE_URL`, then to `https://beta.monad.com`. Set it to `https://app.monad.com` for the production platform, or to your own host for a self-hosted deployment.
 * `use_insecure` - (Optional) Skip TLS certificate verification. Falls back to `MONAD_USE_INSECURE=true`. Only for self-hosted deployments with private certificates; never for production.
+* `request_timeout` - (Optional) Per-request deadline for calls to the Monad API, as a Go duration (`5m`, `90s`). Falls back to `MONAD_REQUEST_TIMEOUT`, then to `5m`. It applies to every API call that does not carry its own deadline; a resource's `timeouts` block overrides it per operation. Pipeline creation is serialized on the API side and can take over a minute when several pipelines are created concurrently, so a budget that is too short makes Terraform record a create as failed while the API finishes it — see the `monad_pipeline` page for how the provider recovers from that.
 
 ## Resources
 

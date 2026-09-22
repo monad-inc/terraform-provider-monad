@@ -117,6 +117,7 @@ The following arguments are optional:
 
 * `description` - (Optional) Free-text description.
 * `config` - (Optional) Connector configuration. [See below](#config-block). Omit the block for a connector type that takes no settings and no credentials, such as `dev-null`.
+* `timeouts` - (Optional) Operation timeouts for this resource. [See below](#timeouts).
 
 ### `config` Block
 
@@ -142,7 +143,19 @@ This resource exports the following attributes in addition to the arguments abov
 | `config.settings` | Input | Refreshed from the API on read |
 | `config.secrets` | Input (write-only) | Never stored in state, never read back |
 | `config.secrets_hash` | Output | Provider-computed rotation fingerprint |
+| `timeouts` | Input | Provider-side deadlines; never sent to the API |
 | `id` | Output | |
+
+## Timeouts
+
+[Configuration options](https://developer.hashicorp.com/terraform/language/resources/syntax#operation-timeouts):
+
+* `create` - (Default: the provider's `request_timeout`, `5m` unless set)
+* `read` - (Default: the provider's `request_timeout`, `5m` unless set)
+* `update` - (Default: the provider's `request_timeout`, `5m` unless set)
+* `delete` - (Default: the provider's `request_timeout`, `5m` unless set)
+
+Each operation runs under its own deadline. A value here may exceed the provider default, so one slow output can be given more time without raising the budget for every call.
 
 ## Import
 

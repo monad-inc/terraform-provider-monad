@@ -18,8 +18,8 @@ variable "organization_id" {
 }
 
 provider "monad" {
-  base_url        = "https://localhost"
+  base_url        = "https://app.monad.com"
   api_token       = var.api_token
   organization_id = var.organization_id
-  use_insecure    = true
+  use_insecure    = false
 }
