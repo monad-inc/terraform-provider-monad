@@ -15,64 +15,11 @@ Like inputs and outputs, an enrichment has a **type** and a **config** of settin
 
 ### Join against a KV Lookup table
 
-```terraform
-# Joins each record against a KV Lookup output. The enrichment references the
-# output by ID, so Terraform orders the creates correctly.
-resource "monad_output" "asset_inventory" {
-  name = "Asset inventory (KV)"
-  type = "kv-lookup"
-
-  config {
-    settings = jsondecode(jsonencode({
-      key_field = "asset_id" # omit value_field to store the whole record
-      ttl       = 172800
-    }))
-  }
-}
-
-resource "monad_enrichment" "asset_context" {
-  name        = "Asset context"
-  description = "Adds owner and criticality from the asset inventory table"
-  type        = "kv-lookup"
-
-  config {
-    settings = jsondecode(jsonencode({
-      kv_lookup_output_id  = monad_output.asset_inventory.id
-      join_path            = "asset.id"
-      destination_key      = "enrichment.asset"
-      error_on_missing_key = false
-    }))
-  }
-}
-```
+{{ tffile "examples/resources/monad_enrichment/resource.tf" }}
 
 ### External provider with an API key
 
-```terraform
-# External enrichment providers take an API key under config.secrets, keyed by
-# the field name on that enrichment's docs page. Reference an existing secret
-# ({ id }) or create one inline ({ value, name, description }).
-resource "monad_secret" "greynoise" {
-  name  = "greynoise-api-key"
-  value = var.greynoise_api_key
-}
-
-resource "monad_enrichment" "ip_reputation" {
-  name = "GreyNoise IP context"
-  type = "greynoise-community"
-
-  config {
-    settings = jsondecode(jsonencode({
-      ip_address_path  = "source.ip"
-      destination_path = "enrichment.greynoise"
-    }))
-
-    secrets = {
-      api_key = { id = monad_secret.greynoise.id }
-    }
-  }
-}
-```
+{{ tffile "examples/resources/monad_enrichment/secrets.tf" }}
 
 ## Argument Reference
 
@@ -129,16 +76,8 @@ Each operation runs under its own deadline. A value here may exceed the provider
 
 In Terraform v1.5.0 and later, use an [`import` block](https://developer.hashicorp.com/terraform/language/import) to import enrichments using the enrichment `id`. For example:
 
-```terraform
-import {
-  to = monad_enrichment.example
-  id = "5d3a9c1e-7f2b-4a6d-b8e0-9c1f2a3b4d50"
-}
-```
+{{ tffile "examples/resources/monad_enrichment/import-by-string-id.tf" }}
 
 Using `terraform import`, import enrichments using the enrichment `id`. For example:
 
-```shell
-# Import an enrichment by its ID (shown in the Monad UI and returned by the API).
-terraform import monad_enrichment.example 5d3a9c1e-7f2b-4a6d-b8e0-9c1f2a3b4d50
-```
+{{ codefile "shell" "examples/resources/monad_enrichment/import.sh" }}

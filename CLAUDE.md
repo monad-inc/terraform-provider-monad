@@ -18,7 +18,8 @@ API via the generated Go SDK `github.com/monad-inc/sdk/go`.
   (schema, Create/Update/Read helpers, the secrets/hash machinery).
 - Conversion + reconciliation helpers live in `utils.go`; their unit tests are
   in `reconcile_test.go` and `utils_test.go`.
-- `docs/resources/*.md` are **generated** — never hand-edit them (see Docs).
+- `docs/**/*.md` are **generated** from `templates/` + `examples/` — never
+  hand-edit them; edit the template and regenerate (see Docs).
 
 ## Toolchain
 
@@ -232,12 +233,37 @@ ordering artifact; investigate it rather than dismissing it. Intermittent
 retry before concluding it's a provider bug (compare the request payload to
 `main` to confirm it's byte-identical).
 
-## Docs are generated
+## Docs are generated — from hand-written templates
 
-`docs/resources/*.md` are produced by `task generate` (`cd tools && go generate`,
-tfplugindocs). After any schema change, **regenerate** rather than editing the
-markdown by hand, and commit the regenerated files. Keep `README.md`'s hand-
-written resource tables in sync too (they drifted before PR #7).
+`docs/index.md` and `docs/resources/*.md` are produced by `task generate`
+(`cd tools && go generate`, tfplugindocs). **Never edit `docs/` by hand**; the
+next generate run overwrites it. Edit the sources and regenerate:
+
+- `templates/index.md.tmpl` and `templates/resources/<name>.md.tmpl` — one page
+  per resource, written in the style of the hashicorp/aws registry docs
+  (ENG-10572): a description of what the resource *is*, `## Example Usage` with
+  named sub-examples, `## Argument Reference` (required, then optional, then a
+  "### `block` Block" / "#### `a.b` Block" subsection per nested block or
+  complex argument), `## Attribute Reference` (exported attributes, plus an
+  "Inputs and outputs" direction table), and `## Import` (import block + CLI).
+  The Argument/Attribute sections are **hand-written prose, not
+  `{{ .SchemaMarkdown }}`**, so a schema change must be mirrored in the template.
+- `examples/resources/monad_<name>/*.tf` — every example the pages embed via
+  `{{ tffile "examples/resources/monad_<name>/<file>.tf" }}`; `resource.tf`,
+  `import.sh` and `import-by-string-id.tf` are the tfplugindocs conventional
+  names. `examples/provider/provider.tf` feeds the index page. Generate runs
+  `terraform fmt -recursive examples/`, so examples must be valid HCL. Field
+  names inside `settings`/`secrets`/`config` must come from the connector's or
+  operation's docs page (or the SDK model) — never invented.
+- `scripts/check-doc-attributes.sh` cross-checks every attribute/block declared
+  in the Go schemas against the templates and fails on any undocumented one.
+  **Run it after any schema change and before pushing**; it is the guard that
+  replaces what `{{ .SchemaMarkdown }}` used to guarantee.
+
+After a schema change: update the template(s) → `./scripts/check-doc-attributes.sh`
+→ `task generate` → commit `templates/`, `examples/` and the regenerated `docs/`
+together. Keep `README.md`'s resource list pointing at the docs rather than
+duplicating them.
 
 ## Changelog & versioning
 
@@ -309,7 +335,7 @@ Registry then auto-ingests the new tag.
 - [ ] Read refreshes via the reconcile helpers; server-populated / non-round-trippable fields masked; empties pruned (booleans/numbers untouched).
 - [ ] Any new secret handling is write-only + hash; secrets read from `req.Config`; diags appended, not swallowed.
 - [ ] `go build` / `go vet` / `go test ./internal/...` / `gofmt -l` all clean.
-- [ ] Docs regenerated (`task generate`) if the schema changed; README/CHANGELOG updated.
+- [ ] Docs: template updated for any schema change, `./scripts/check-doc-attributes.sh` clean, `task generate` run and `docs/` committed; README/CHANGELOG updated.
 - [ ] Live-verified with `dev_overrides`: apply → no-op plan → drift detected → import clean → destroy clean.
 
 <!--

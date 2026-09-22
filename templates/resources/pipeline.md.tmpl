@@ -17,353 +17,27 @@ Creating the pipeline is what starts data moving: components on their own do not
 
 ### Input, transform, output
 
-```terraform
-# The smallest useful pipeline: input → transform → output. Nodes name the
-# components; edges connect nodes by slug. An "always" condition passes every
-# record.
-resource "monad_pipeline" "basic" {
-  name        = "CloudTrail to archive"
-  description = "Tags each record, then archives it"
-
-  nodes {
-    slug           = "source"
-    component_type = "input"
-    component_id   = monad_input.demo.id
-  }
-  nodes {
-    slug           = "tag"
-    component_type = "transform"
-    component_id   = monad_transform.tag_and_trim.id
-  }
-  nodes {
-    slug           = "archive"
-    component_type = "output"
-    component_id   = monad_output.archive.id
-  }
-
-  edges {
-    from_node_instance_slug = "source"
-    to_node_instance_slug   = "tag"
-    condition {
-      operator = "always"
-    }
-  }
-  edges {
-    from_node_instance_slug = "tag"
-    to_node_instance_slug   = "archive"
-    condition {
-      operator = "always"
-    }
-  }
-}
-```
+{{ tffile "examples/resources/monad_pipeline/resource.tf" }}
 
 ### Fan-out with conditional routing
 
-```terraform
-# Fan-out with conditional routing. A node may have many outgoing edges, each
-# with its own condition; a record follows every edge whose condition matches
-# and is dropped if none does. The root operator is always a logical operator
-# (always, never, and, or, nor, xor) wrapping one or more leaf conditions.
-resource "monad_pipeline" "routed" {
-  name    = "CloudTrail routed by severity"
-  enabled = true
-
-  nodes {
-    slug           = "source"
-    component_type = "input"
-    component_id   = monad_input.demo.id
-  }
-  nodes {
-    slug           = "normalize"
-    component_type = "transform"
-    component_id   = monad_transform.cloudtrail_to_ecs.id
-  }
-  nodes {
-    slug           = "asset-context"
-    component_type = "enrichment"
-    component_id   = monad_enrichment.asset_context.id
-  }
-  nodes {
-    slug           = "siem"
-    component_type = "output"
-    component_id   = monad_output.siem.id
-  }
-  nodes {
-    slug           = "archive"
-    component_type = "output"
-    component_id   = monad_output.archive.id
-  }
-  nodes {
-    slug           = "sample"
-    component_type = "output"
-    component_id   = monad_output.sample_bucket.id
-  }
-
-  edges {
-    from_node_instance_slug = "source"
-    to_node_instance_slug   = "normalize"
-    condition {
-      operator = "always"
-    }
-  }
-  edges {
-    from_node_instance_slug = "normalize"
-    to_node_instance_slug   = "asset-context"
-    condition {
-      operator = "always"
-    }
-  }
-
-  # Everything goes to the archive.
-  edges {
-    from_node_instance_slug = "asset-context"
-    to_node_instance_slug   = "archive"
-    condition {
-      operator = "always"
-    }
-  }
-
-  # Only failures and console logins from outside the corporate ranges reach
-  # the SIEM: (error_code exists OR event is ConsoleLogin) AND NOT internal.
-  edges {
-    name                    = "high value to SIEM"
-    from_node_instance_slug = "asset-context"
-    to_node_instance_slug   = "siem"
-
-    condition {
-      operator = "and"
-
-      conditions {
-        type_id = "equals_any"
-        config {
-          key    = "event.action"
-          values = ["ConsoleLogin", "AssumeRole", "CreateAccessKey"]
-        }
-      }
-      conditions {
-        type_id = "starts_with"
-        config {
-          key   = "source.ip"
-          value = "10."
-          not   = true
-        }
-      }
-    }
-  }
-
-  # A 5% sample of everything else, for tuning detections offline.
-  edges {
-    name                    = "sample for tuning"
-    from_node_instance_slug = "asset-context"
-    to_node_instance_slug   = "sample"
-
-    condition {
-      operator = "and"
-      conditions {
-        type_id = "sample"
-        config {
-          percent = 5
-        }
-      }
-    }
-  }
-}
-```
+{{ tffile "examples/resources/monad_pipeline/routing.tf" }}
 
 ### Every condition rule
 
-```terraform
-# One edge showing each leaf rule. Every rule reads `key`, and most accept
-# `not`; the remaining fields are rule-specific and the provider rejects a
-# mismatch at plan time.
-resource "monad_pipeline" "every_rule" {
-  name = "Condition rule reference"
-
-  nodes {
-    slug           = "source"
-    component_type = "input"
-    component_id   = monad_input.demo.id
-  }
-  nodes {
-    slug           = "sink"
-    component_type = "output"
-    component_id   = monad_output.sink.id
-  }
-
-  edges {
-    from_node_instance_slug = "source"
-    to_node_instance_slug   = "sink"
-
-    condition {
-      # "nor" passes a record only when NONE of the leaves match.
-      operator = "nor"
-
-      conditions {
-        type_id = "equals"
-        config {
-          key              = "event.outcome"
-          value            = "success"
-          case_insensitive = true
-        }
-      }
-      conditions {
-        type_id = "contains"
-        config {
-          key   = "user.name"
-          value = "svc-"
-          raw   = true
-        }
-      }
-      conditions {
-        type_id = "ends_with"
-        config {
-          key   = "user.email"
-          value = "@example.com"
-        }
-      }
-      conditions {
-        type_id = "greater_than"
-        config {
-          key   = "http.response.status_code"
-          value = "499"
-        }
-      }
-      conditions {
-        type_id = "less_than"
-        config {
-          key   = "event.duration"
-          value = "10"
-        }
-      }
-      conditions {
-        type_id = "matches_regex"
-        config {
-          key     = "source.ip"
-          pattern = "^(10|192\\.168)\\."
-        }
-      }
-      conditions {
-        type_id = "key_exists"
-        config {
-          key = "error.code"
-        }
-      }
-      conditions {
-        type_id = "is_empty"
-        config {
-          key               = "user.id"
-          null              = true
-          whitespace_string = true
-        }
-      }
-    }
-  }
-}
-```
+{{ tffile "examples/resources/monad_pipeline/conditions.tf" }}
 
 ### Schema drift detection on an edge
 
-```terraform
-# Schema drift detection is per edge and off unless the block is present.
-# Declare it on every edge where detection should stay on; omitting the block
-# on a later apply turns detection off and discards the learned schema.
-resource "monad_pipeline" "monitored" {
-  name = "CloudTrail (schema-monitored)"
-
-  nodes {
-    slug           = "source"
-    component_type = "input"
-    component_id   = monad_input.demo.id
-  }
-  nodes {
-    slug           = "siem"
-    component_type = "output"
-    component_id   = monad_output.siem.id
-  }
-
-  edges {
-    from_node_instance_slug = "source"
-    to_node_instance_slug   = "siem"
-
-    condition {
-      operator = "always"
-    }
-
-    schema_detection_spec {
-      enabled = true
-      # Learn and report drift, but do not raise alerts for this edge.
-      disable_alerting = true
-    }
-  }
-}
-```
+{{ tffile "examples/resources/monad_pipeline/schema-detection.tf" }}
 
 ### Create disabled, enable later
 
-```terraform
-# Create a pipeline disabled, then flip enabled once secrets are populated and
-# a test run looks right. enabled is optional; omitting it adopts the server
-# default (enabled) rather than forcing a value.
-resource "monad_pipeline" "staged" {
-  name    = "CloudTrail (staged)"
-  enabled = false
-
-  nodes {
-    slug           = "source"
-    component_type = "input"
-    component_id   = monad_input.archive.id
-  }
-  nodes {
-    slug           = "archive"
-    component_type = "output"
-    component_id   = monad_output.archive.id
-  }
-
-  edges {
-    from_node_instance_slug = "source"
-    to_node_instance_slug   = "archive"
-    condition {
-      operator = "always"
-    }
-  }
-}
-```
+{{ tffile "examples/resources/monad_pipeline/disabled.tf" }}
 
 ### A longer create budget
 
-```terraform
-# Pipeline creation is serialized on the API side, so a large apply can push
-# individual creates past the provider's request_timeout. Give this resource
-# its own budget rather than raising the provider-wide one.
-resource "monad_pipeline" "big_fanout" {
-  name = "CloudTrail fan-out"
-
-  timeouts {
-    create = "10m"
-    update = "10m"
-  }
-
-  nodes {
-    slug           = "source"
-    component_type = "input"
-    component_id   = monad_input.demo.id
-  }
-  nodes {
-    slug           = "archive"
-    component_type = "output"
-    component_id   = monad_output.archive.id
-  }
-
-  edges {
-    from_node_instance_slug = "source"
-    to_node_instance_slug   = "archive"
-    condition {
-      operator = "always"
-    }
-  }
-}
-```
+{{ tffile "examples/resources/monad_pipeline/timeouts.tf" }}
 
 ## Argument Reference
 
@@ -488,19 +162,10 @@ A pipeline create that outlives its `create` timeout is not simply reported as f
 
 In Terraform v1.5.0 and later, use an [`import` block](https://developer.hashicorp.com/terraform/language/import) to import pipelines using the pipeline `id`. For example:
 
-```terraform
-import {
-  to = monad_pipeline.example
-  id = "7a9d2e5f-3c1b-4f8e-9d6a-0b1c2d3e4f5a"
-}
-```
+{{ tffile "examples/resources/monad_pipeline/import-by-string-id.tf" }}
 
 Using `terraform import`, import pipelines using the pipeline `id`. For example:
 
-```shell
-# Import a pipeline by its ID. Nodes and edges are sets, so the first plan after
-# import is clean regardless of the order they appear in your configuration.
-terraform import monad_pipeline.example 7a9d2e5f-3c1b-4f8e-9d6a-0b1c2d3e4f5a
-```
+{{ codefile "shell" "examples/resources/monad_pipeline/import.sh" }}
 
 Read populates `nodes`, `edges` and `enabled` from the API, so `terraform plan -generate-config-out` produces a complete configuration and the first plan after import is clean. A `nodes` or `edges` diff after import means a set element genuinely differs from the configuration, not a cosmetic ordering artifact.

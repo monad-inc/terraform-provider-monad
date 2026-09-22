@@ -15,96 +15,19 @@ Outputs buffer and retry per node, so one destination going offline does not sto
 
 ### A placeholder sink
 
-```terraform
-# The simplest output: discard everything. Useful as a placeholder sink while
-# a pipeline is being built.
-resource "monad_output" "sink" {
-  name        = "Discard"
-  description = "dev-null sink — swap type and settings for a real destination"
-  type        = "dev-null"
-}
-```
+{{ tffile "examples/resources/monad_output/resource.tf" }}
 
 ### Object storage with nested settings
 
-```terraform
-# An object-storage destination with nested settings (format and batching).
-resource "monad_output" "archive" {
-  name        = "CloudTrail archive (S3)"
-  description = "Durable archive of every ingested record, unmodified"
-  type        = "s3"
-
-  config {
-    settings = jsondecode(jsonencode({
-      role_arn         = var.archive_role_arn
-      bucket           = var.archive_bucket
-      region           = "us-west-2"
-      prefix           = "archive"
-      compression      = "none"
-      partition_format = "simple date"
-      format_config = {
-        Format      = "json"
-        json_format = { type = "line" }
-      }
-      batch_config = {
-        batch_record_count = 500
-        batch_data_size    = 1048576
-        publish_rate       = 5
-      }
-    }))
-  }
-}
-```
+{{ tffile "examples/resources/monad_output/s3.tf" }}
 
 ### Credentials referenced from `settings`
 
-```terraform
-# Some connectors take their credentials inside settings as a secret reference
-# ({ id = ... }) rather than under config.secrets. The connector's docs page
-# shows which; the shape below is the Slack output's webhook variant.
-resource "monad_secret" "slack_webhook" {
-  name  = "slack-alerts-webhook"
-  value = var.slack_webhook_url
-}
-
-resource "monad_output" "slack" {
-  name        = "Slack #security-alerts"
-  description = "Posts fired and resolved Monad alerts to Slack"
-  type        = "slack"
-
-  config {
-    settings = jsondecode(jsonencode({
-      auth_config = {
-        type = "webhook"
-        webhook = {
-          webhook_url = { id = monad_secret.slack_webhook.id }
-        }
-      }
-      message_template = file("${path.module}/slack-alert-template.tmpl")
-    }))
-  }
-}
-```
+{{ tffile "examples/resources/monad_output/slack.tf" }}
 
 ### A KV Lookup table for enrichments
 
-```terraform
-# A KV Lookup output is a key-value table other pipelines can read from via a
-# monad_enrichment of type "kv-lookup". ttl is the entry lifetime in seconds.
-resource "monad_output" "dedup_store" {
-  name        = "Dedup fingerprints (KV)"
-  description = "Record fingerprints already shipped; 48h TTL is the dedup window"
-  type        = "kv-lookup"
-
-  config {
-    settings = jsondecode(jsonencode({
-      key_field   = "_dedup_key"
-      value_field = "_dedup_key"
-      ttl         = 172800
-    }))
-  }
-}
-```
+{{ tffile "examples/resources/monad_output/kv-lookup.tf" }}
 
 ## Argument Reference
 
@@ -161,18 +84,10 @@ Each operation runs under its own deadline. A value here may exceed the provider
 
 In Terraform v1.5.0 and later, use an [`import` block](https://developer.hashicorp.com/terraform/language/import) to import outputs using the output `id`. For example:
 
-```terraform
-import {
-  to = monad_output.example
-  id = "2b6e1f4a-9c3d-4e5f-8a7b-6c5d4e3f2a10"
-}
-```
+{{ tffile "examples/resources/monad_output/import-by-string-id.tf" }}
 
 Using `terraform import`, import outputs using the output `id`. For example:
 
-```shell
-# Import an output by its ID (shown in the Monad UI and returned by the API).
-terraform import monad_output.example 2b6e1f4a-9c3d-4e5f-8a7b-6c5d4e3f2a10
-```
+{{ codefile "shell" "examples/resources/monad_output/import.sh" }}
 
 If the configuration declares `config.secrets`, the first plan after import shows a one-time update that re-sends them and records `secrets_hash`; Monad never returns secret material for the provider to compare against.
