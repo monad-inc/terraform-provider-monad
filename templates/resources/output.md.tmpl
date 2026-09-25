@@ -80,6 +80,8 @@ This resource exports the following attributes in addition to the arguments abov
 
 Each operation runs under its own deadline. A value here may exceed the provider default, so one slow output can be given more time without raising the budget for every call.
 
+A create that outlives its `create` timeout is not simply reported as failed, because the API can finish the create after the provider stops waiting. The provider then polls the organization's outputs for up to two minutes for an output with the same `name` and `type` created since the request started: exactly one match is adopted into state with a warning, none is reported as "not created, safe to retry", and several are listed by `id` with a request to [import](#import) the right one rather than guess.
+
 ## Import
 
 In Terraform v1.5.0 and later, use an [`import` block](https://developer.hashicorp.com/terraform/language/import) to import outputs using the output `id`. For example:

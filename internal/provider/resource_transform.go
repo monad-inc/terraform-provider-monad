@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -127,6 +129,9 @@ func (r *ResourceTransform) Create(
 		return
 	}
 
+	// The adopt-after-timeout lookup must outlive the create timeout, so it
+	// uses the parent context (request_timeout still bounds each request).
+	parentCtx := ctx
 	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Create, r.client.RequestTimeout, &resp.Diagnostics)
 	defer cancel()
 	if resp.Diagnostics.HasError() {
@@ -147,22 +152,20 @@ func (r *ResourceTransform) Create(
 		Config:      transformConfig,
 	}
 
+	startedAt := time.Now().UTC()
 	transform, monadResp, err := r.client.OrganizationTransformsAPI.
 		CreateTransform(
 			ctx,
 			r.client.OrganizationID,
 		).CreateTransformRequest(monad.RoutesCreateTransformRequestAsCreateTransformRequest(&request)).
 		Execute()
-
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Client Error",
-			fmt.Sprintf(
-				"Unable to create transform, got error: %s. Response: %s",
-				err,
-				getResponseBody(monadResp),
-			),
-		)
+	createdID, ok := createOrAdopt(parentCtx, &resp.Diagnostics, adoptTarget{
+		Kind:      "transform",
+		Name:      data.Name.ValueString(),
+		StartedAt: startedAt,
+		List:      r.listForAdopt,
+	}, transform.GetId(), err, monadResp)
+	if !ok {
 		return
 	}
 
@@ -173,7 +176,7 @@ func (r *ResourceTransform) Create(
 	// value (e.g. jsondecode with an `operations` tuple) must be preserved
 	// verbatim — rebuilding it from the API response yields a different cty
 	// type and trips "Provider produced inconsistent result after apply".
-	data.ID = types.StringValue(*transform.Id)
+	data.ID = types.StringValue(createdID)
 
 	tflog.Trace(ctx, "created a transform resource")
 
@@ -472,4 +475,19 @@ func parseOperations(_ context.Context, operationsDynamic types.Dynamic) ([]mona
 	}
 
 	return operations, nil
+}
+
+// listForAdopt is the adoptLister for transforms.
+func (r *ResourceTransform) listForAdopt(ctx context.Context, limit, offset int32) ([]adoptCandidate, *int32, *http.Response, error) {
+	page, httpResp, err := r.client.OrganizationTransformsAPI.ListOrganizationTransforms(ctx, r.client.OrganizationID).
+		Limit(limit).Offset(offset).Execute()
+	if err != nil || page == nil {
+		return nil, nil, httpResp, err
+	}
+	out := make([]adoptCandidate, 0, len(page.Transforms))
+	for _, it := range page.Transforms {
+		out = append(out, adoptCandidate{ID: it.Id, Name: it.Name, CreatedAt: it.CreatedAt})
+	}
+	total, _ := page.Pagination.GetTotalOk()
+	return out, total, httpResp, nil
 }

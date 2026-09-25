@@ -83,6 +83,11 @@ Same data, different cty type → apply-consistency violation:
   as it came from the plan. `data` is populated from `req.Plan.Get` (or
   `req.Config.Get` — see secrets), then only `data.ID` is overwritten.
 - The `id` attribute uses `stringplanmodifier.UseStateForUnknown()`.
+- **Resolve the created id through `createOrAdopt`** (`utils.go`), giving it
+  the resource's `listForAdopt` and the context from *before*
+  `withOperationTimeout`. A create that times out client-side often commits
+  server-side; `createOrAdopt` adopts it by name instead of orphaning it
+  (ENG-10511). Adoption sets only `id`, like any other create.
 
 ## Read: refresh for drift WITHOUT perpetual diffs
 
