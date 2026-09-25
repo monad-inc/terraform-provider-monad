@@ -21,6 +21,16 @@ breaking changes are released as minor version bumps.
   "not created, safe to retry", and names the candidate ids and asks for
   `terraform import` when there are several. `monad_secret` matches by name
   regardless of age, because its create upserts by name. (ENG-10511)
+- **`config.secrets_hash` no longer turns into "known after apply" on
+  unrelated changes.** On `monad_input`, `monad_output` and
+  `monad_enrichment` the hash had no `UseStateForUnknown`, so any other diff
+  (a settings edit, or the `timeouts` block after `terraform import`) showed
+  it as recomputed, and an imported connector with no secrets planned a
+  pointless update. The stored hash is now kept unless the secrets actually
+  change. Secrets that are unknown until apply (derived from another
+  resource) now always plan an update: previously a wholly unknown value
+  hashed as "no secrets", and a partly unknown one was skipped with a
+  warning, so the rotation could be missed. (ENG-10511)
 
 ## 0.5.1
 

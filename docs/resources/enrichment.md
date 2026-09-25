@@ -144,3 +144,5 @@ Using `terraform import`, import enrichments using the enrichment `id`. For exam
 # Import an enrichment by its ID (shown in the Monad UI and returned by the API).
 terraform import monad_enrichment.example 5d3a9c1e-7f2b-4a6d-b8e0-9c1f2a3b4d50
 ```
+
+Monad never returns secret material, so an imported enrichment has a null `config.secrets_hash`. If the configuration declares `secrets`, the first plan after import shows a one-time update that re-sends them and records the fingerprint.

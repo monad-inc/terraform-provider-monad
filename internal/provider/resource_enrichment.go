@@ -118,6 +118,14 @@ func (r *ResourceEnrichment) Schema(
 							"detect when the write-only secret values change. Managed " +
 							"by the provider.",
 						Computed: true,
+						// Keep the stored hash when some other attribute
+						// changes; otherwise any diff (e.g. a `timeouts` block
+						// after import) shows it as "known after apply".
+						// modifyConnectorPlanForSecrets still marks it unknown
+						// on a genuine rotation.
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
 					},
 				},
 			},
