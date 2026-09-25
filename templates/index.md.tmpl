@@ -12,7 +12,7 @@ The Monad provider manages every one of those objects through the [Monad API](ht
 
 -> **Terraform 1.11 or later is required.** Secret material (`monad_secret.value` and `config.secrets` on connectors) is declared as [write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments): it is sent to the API but never stored in Terraform state. Earlier Terraform releases reject a provider schema that carries write-only arguments.
 
-~> The provider is pre-1.0. Breaking changes ship as **minor** version bumps, so pin to a minor series (`~> 0.4`) and treat each minor upgrade as a reviewed change. The [changelog](https://github.com/monad-inc/terraform-provider-monad/blob/main/CHANGELOG.md) documents a migration path for each one.
+~> The provider is pre-1.0. Breaking changes ship as **minor** version bumps, so pin to a minor series (`~> 0.5.0`, which accepts 0.5.x patches only) and treat each minor upgrade as a reviewed change. The [changelog](https://github.com/monad-inc/terraform-provider-monad/blob/main/CHANGELOG.md) documents a migration path for each one.
 
 ## Example Usage
 
@@ -79,7 +79,7 @@ This provider supports the following arguments:
 
 * `api_token` - (Optional, Sensitive) Organization API key used to authenticate. Falls back to `MONAD_API_TOKEN`. Required by one of the two routes.
 * `organization_id` - (Optional) ID of the organization every resource is created in. Falls back to `MONAD_ORGANIZATION_ID`. Required by one of the two routes.
-* `base_url` - (Optional) Base URL of the Monad platform, **without** the `/api` suffix — the provider appends it. Falls back to `MONAD_BASE_URL`, then to `https://beta.monad.com`. Set it to `https://app.monad.com` for the production platform, or to your own host for a self-hosted deployment.
+* `base_url` - (Optional) Base URL of the Monad platform, **without** the `/api` suffix — the provider appends it. Falls back to `MONAD_BASE_URL`, then to `https://app.monad.com`, the Monad SaaS platform. Set it to your own host for a self-hosted deployment.
 * `use_insecure` - (Optional) Skip TLS certificate verification. Falls back to `MONAD_USE_INSECURE=true`. Only for self-hosted deployments with private certificates; never for production.
 * `request_timeout` - (Optional) Per-request deadline for calls to the Monad API, as a Go duration (`5m`, `90s`). Falls back to `MONAD_REQUEST_TIMEOUT`, then to `5m`. It applies to every API call that does not carry its own deadline; a resource's `timeouts` block overrides it per operation. Pipeline creation is serialized on the API side and can take over a minute when several pipelines are created concurrently, so a budget that is too short makes Terraform record a create as failed while the API finishes it — see the `monad_pipeline` page for how the provider recovers from that.
 
@@ -100,3 +100,5 @@ This provider supports the following arguments:
 `monad_input`, `monad_output` and `monad_enrichment` share one shape: a `type` naming the connector, and a `config` block holding that connector's `settings` and, where it takes credentials, its `secrets`. The settings and secret field names are the connector's API field names; every connector's page in the Monad docs ([inputs](https://app.monad.com/docs/inputs), [outputs](https://app.monad.com/docs/outputs), [enrichments](https://app.monad.com/docs/enrichments)) lists them, and its "API Examples" section shows the JSON to mirror. Write `settings` as a plain HCL object. `jsondecode(jsonencode({ ... }))`, which older examples wrapped around it, is a no-op for a literal; see the `settings` argument on any connector page for when it is and is not useful.
 
 Secrets are never written inline as strings. Every credential is either a **reference** to a `monad_secret`, `{ id = monad_secret.example.id }`, or a **new secret created inline**, `{ name = "...", description = "...", value = "..." }` with all three set. Where the credential lives depends on the connector: most take it under `config.secrets`, while some newer connectors take the same `{ id }` reference inside `settings` (the Slack output's `auth_config` is one example). The connector's docs page is authoritative.
+
+The provider has no `version` argument for connectors. A component Terraform creates gets its connector type's latest version. A component whose version was pinned outside Terraform (in the Monad UI or through the API) keeps that version across Terraform updates, including after `terraform import`. A component that Terraform destroys and re-creates gets the latest version again.

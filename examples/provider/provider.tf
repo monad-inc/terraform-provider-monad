@@ -6,7 +6,7 @@ terraform {
     monad = {
       source = "monad-inc/monad"
       # Pre-1.0: breaking changes ship as minor bumps, so pin the minor.
-      version = "~> 0.4"
+      version = "~> 0.5.0"
     }
   }
 }
