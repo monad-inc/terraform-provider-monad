@@ -82,6 +82,171 @@ func withOperationTimeout(
 	return context.WithTimeout(ctx, d)
 }
 
+// adoptTimeoutGrace is how long adoptAfterTimeout keeps polling for an object
+// whose create was still in flight when the client gave up, and
+// adoptPollInterval how often. Variables so tests can shorten them.
+var (
+	adoptTimeoutGrace = 2 * time.Minute
+	adoptPollInterval = 5 * time.Second
+)
+
+// adoptCandidate is the part of a listed object adoptAfterTimeout needs. Every
+// Monad list endpoint returns id, name and created_at; connectors add type.
+type adoptCandidate struct {
+	ID        *string
+	Name      *string
+	Type      *string
+	CreatedAt *string
+}
+
+// adoptLister fetches one page of the organization's objects of one resource
+// type, plus the total the API reports (nil when it doesn't say). Each
+// resource supplies its own, since each list call is a differently-typed SDK
+// API.
+type adoptLister func(ctx context.Context, limit, offset int32) ([]adoptCandidate, *int32, *http.Response, error)
+
+// adoptTarget describes the object a timed-out create was trying to make.
+type adoptTarget struct {
+	// Kind names the resource in messages ("pipeline", "alert rule", …).
+	Kind string
+	Name string
+	// Type, when set, must equal a candidate's type (connectors of different
+	// types may share a name).
+	Type string
+	// StartedAt is when the create request was sent; candidates created more
+	// than a minute before it (clock-skew allowance) are not this create's.
+	StartedAt time.Time
+	// AnyAge disables the created_at filter, for creates that upsert by name
+	// (monad_secret): the object this create touched may predate it.
+	AnyAge bool
+	List   adoptLister
+}
+
+// createOrAdopt resolves the id a create call produced. On success that is
+// createdID (the response's id). On failure it is either an adopted id or an
+// error diagnostic: a timeout is ambiguous — the API often finishes a create
+// after the client gives up — so rather than report failure and leave the
+// object on the server but out of state (the next apply would create a
+// duplicate, ENG-10257 / ENG-10511), it looks the object up by name and adopts
+// it when that is unambiguous. Any other error is reported as a client error.
+//
+// ctx must outlive the create's own timeout (pass the context from before
+// withOperationTimeout); the provider-level request_timeout still bounds each
+// list request. ok is false when an error diagnostic was added.
+func createOrAdopt(
+	ctx context.Context,
+	diags *diag.Diagnostics,
+	t adoptTarget,
+	createdID string,
+	err error,
+	httpResp *http.Response,
+) (id string, ok bool) {
+	if err == nil {
+		return createdID, true
+	}
+	if !isTimeoutError(err) {
+		diags.AddError(
+			"Client Error",
+			fmt.Sprintf("Unable to create %s, got error: %s. Response: %s", t.Kind, err, getResponseBody(httpResp)),
+		)
+		return "", false
+	}
+	kind := strings.ToUpper(t.Kind[:1]) + t.Kind[1:]
+	id, adoptErr := adoptAfterTimeout(ctx, t)
+	if adoptErr != nil {
+		diags.AddError(
+			kind+" create timed out",
+			fmt.Sprintf("The request to create %s %q exceeded its create timeout: %s. %s", t.Kind, t.Name, err, adoptErr),
+		)
+		return "", false
+	}
+	diags.AddWarning(
+		kind+" create timed out but completed on the server",
+		fmt.Sprintf(
+			"The request to create %s %q exceeded its create timeout, "+
+				"but the API finished creating it as %s, so it has been adopted into state. "+
+				"Consider a longer `timeouts { create = … }` (or provider request_timeout), "+
+				"or a lower -parallelism.",
+			t.Kind, t.Name, id,
+		),
+	)
+	return id, true
+}
+
+// adoptAfterTimeout finds the object a timed-out create produced. It polls the
+// organization's list for one matching t, and returns its id when there is
+// exactly one. Zero matches after the grace period means the server really did
+// not create it (safe to retry); more than one means the practitioner must
+// disambiguate with `terraform import`, so an error is returned rather than
+// guessing.
+func adoptAfterTimeout(ctx context.Context, t adoptTarget) (string, error) {
+	deadline := time.Now().Add(adoptTimeoutGrace)
+	for {
+		matches, err := listAdoptCandidates(ctx, t)
+		if err != nil {
+			return "", fmt.Errorf("could not list %ss to check whether it was created anyway: %v. "+
+				"Check the organization for a %s named %q before re-running; if it exists, "+
+				"`terraform import` it to avoid creating a duplicate", t.Kind, err, t.Kind, t.Name)
+		}
+		switch len(matches) {
+		case 1:
+			return matches[0], nil
+		case 0:
+			if time.Now().After(deadline) {
+				return "", fmt.Errorf("no %s named %q appeared within %s, so it was not created; "+
+					"re-run to retry, or raise request_timeout / lower -parallelism", t.Kind, t.Name, adoptTimeoutGrace)
+			}
+			select {
+			case <-ctx.Done():
+				return "", fmt.Errorf("gave up waiting for %s %q: %v", t.Kind, t.Name, ctx.Err())
+			case <-time.After(adoptPollInterval):
+			}
+		default:
+			return "", fmt.Errorf("%d %ss named %q were created since the request started (%s); "+
+				"cannot tell which one this resource is. Import the right one with "+
+				"`terraform import <address> <id>` and delete the others",
+				len(matches), t.Kind, t.Name, strings.Join(matches, ", "))
+		}
+	}
+}
+
+// listAdoptCandidates pages through t.List and returns the ids of objects
+// named t.Name (and of type t.Type, when set) created at or after the
+// clock-skew-adjusted t.StartedAt. Objects without a parseable created_at are
+// included, to err on the side of finding it.
+func listAdoptCandidates(ctx context.Context, t adoptTarget) ([]string, error) {
+	notBefore := t.StartedAt.Add(-time.Minute)
+	var ids []string
+	const pageSize int32 = 100
+	for offset := int32(0); ; offset += pageSize {
+		page, total, httpResp, err := t.List(ctx, pageSize, offset)
+		if err != nil {
+			return nil, fmt.Errorf("%v (response: %s)", err, getResponseBody(httpResp))
+		}
+		for _, c := range page {
+			if c.ID == nil || c.Name == nil || *c.Name != t.Name {
+				continue
+			}
+			if t.Type != "" && (c.Type == nil || *c.Type != t.Type) {
+				continue
+			}
+			if !t.AnyAge && c.CreatedAt != nil {
+				if created, perr := time.Parse(time.RFC3339Nano, *c.CreatedAt); perr == nil && created.Before(notBefore) {
+					continue
+				}
+			}
+			ids = append(ids, *c.ID)
+		}
+		if len(page) < int(pageSize) {
+			break
+		}
+		if total != nil && offset+pageSize >= *total {
+			break
+		}
+	}
+	return ids, nil
+}
+
 func isNotFoundResponse(resp *http.Response, body []byte) bool {
 	if resp != nil {
 		switch resp.StatusCode {

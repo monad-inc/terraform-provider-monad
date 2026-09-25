@@ -103,6 +103,14 @@ func getConnectorSchema(ctx context.Context) schema.Schema {
 							"detect when the write-only secret values change. Managed " +
 							"by the provider.",
 						Computed: true,
+						// Keep the stored hash when some other attribute
+						// changes; otherwise any diff (e.g. a `timeouts` block
+						// after import) shows it as "known after apply".
+						// modifyConnectorPlanForSecrets still marks it unknown
+						// on a genuine rotation.
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
 					},
 				},
 			},
@@ -189,6 +197,15 @@ func modifyConnectorPlanForSecrets(ctx context.Context, orgID string, req resour
 	var secretsDyn types.Dynamic
 	if diags := req.Config.GetAttribute(ctx, secretsPath, &secretsDyn); diags.HasError() {
 		// config block absent or not a dynamic — nothing to reconcile.
+		return
+	}
+
+	// Secrets not known until apply (e.g. derived from another resource) may
+	// or may not be a rotation; plan the update so Update can decide. Without
+	// this, the stored hash would be kept and Update's recomputed hash would
+	// be an inconsistent result.
+	if tv, err := secretsDyn.ToTerraformValue(ctx); err == nil && !tv.IsFullyKnown() {
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, hashPath, types.StringUnknown())...)
 		return
 	}
 

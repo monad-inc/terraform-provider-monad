@@ -4,6 +4,34 @@ All notable changes to this provider are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/). While the provider is pre-1.0,
 breaking changes are released as minor version bumps.
 
+## Unreleased
+
+### Fixed
+
+- **A create that outlives its timeout no longer orphans the object on any
+  resource.** 0.5.0 added adopt-after-timeout to `monad_pipeline` only; the
+  other six resources (`monad_input`, `monad_output`, `monad_enrichment`,
+  `monad_transform`, `monad_alert_rule`, `monad_secret`) still reported a
+  timed-out create as failed while the API finished it, leaving the object on
+  the server but out of state so the next apply tried to create it again. All
+  seven now share one recovery path: on a timeout the provider polls the
+  organization's list for up to two minutes for an object with the same name
+  (and `type`, for connectors and alert rules) created since the request
+  started, adopts exactly one match into state with a warning, reports zero as
+  "not created, safe to retry", and names the candidate ids and asks for
+  `terraform import` when there are several. `monad_secret` matches by name
+  regardless of age, because its create upserts by name. (ENG-10511)
+- **`config.secrets_hash` no longer turns into "known after apply" on
+  unrelated changes.** On `monad_input`, `monad_output` and
+  `monad_enrichment` the hash had no `UseStateForUnknown`, so any other diff
+  (a settings edit, or the `timeouts` block after `terraform import`) showed
+  it as recomputed, and an imported connector with no secrets planned a
+  pointless update. The stored hash is now kept unless the secrets actually
+  change. Secrets that are unknown until apply (derived from another
+  resource) now always plan an update: previously a wholly unknown value
+  hashed as "no secrets", and a partly unknown one was skipped with a
+  warning, so the rotation could be missed. (ENG-10511)
+
 ## 0.5.1
 
 ### Changed
