@@ -8,6 +8,23 @@ breaking changes are released as minor version bumps.
 
 ### Changed
 
+- **`base_url` now defaults to `https://app.monad.com`.** With neither
+  `base_url` nor `MONAD_BASE_URL` set, the provider targeted
+  `https://beta.monad.com`, a legacy hostname that now only answers with a
+  `308` redirect to `https://app.monad.com`. Every API call made an extra
+  round trip, and the provider depended on that redirect staying in place.
+  It now targets `https://app.monad.com` directly. No configuration change is
+  needed: a configuration that omitted `base_url` already reached
+  `app.monad.com` through the redirect, and one that sets it is unaffected.
+- **Documentation: the version-pin advice pins a minor series.** The index
+  page said "pin to a minor series" but showed `version = "~> 0.4"`, which
+  accepts every later 0.x release, including breaking ones. It now shows
+  `~> 0.5.0` (0.5.x patches only).
+- **Documentation: connector versions.** The index page now says what
+  happens to a connector's version, which the provider has no argument for:
+  a create gets the connector type's latest version, a version pinned
+  outside Terraform is kept across updates and import, and a re-create gets
+  the latest again.
 - **Documentation: `settings` / `config` / `rule_config` values are written as
   plain HCL objects.** The registry pages and every example wrapped them in
   `jsondecode(jsonencode({ ... }))` and described that as required when the
@@ -18,7 +35,7 @@ breaking changes are released as minor version bumps.
   is actually useful (flattening a set or map that arrives from a typed
   variable or another resource's attribute into JSON arrays and objects) and
   the examples use plain literals. The `monad_alert_rule.rule_config` schema
-  description drops the same advice. No provider behaviour changes.
+  description drops the same advice.
 
 ## 0.5.0
 
