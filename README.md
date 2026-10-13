@@ -1,7 +1,7 @@
 # Terraform Monad Provider
 
 - Terraform: https://www.terraform.io
-- Monad: https://beta.monad.com
+- Monad: https://monad.com
 - Community: [Join #monad on Slack →](https://join.slack.com/t/monad-community/shared_invite/zt-2l1xvgdv8-JqfJgqHfQFPqRBQO4TdoYQ)
 
 ## Requirements
@@ -97,7 +97,7 @@ terraform {
 }
 
 provider "monad" {
-  base_url        = "https://app.monad.com"   # Optional; defaults to https://beta.monad.com
+  base_url        = "https://app.monad.com"   # Optional; this is the default
   api_token       = var.monad_api_token       # Can use MONAD_API_TOKEN env var
   organization_id = var.organization_id       # Can use MONAD_ORGANIZATION_ID env var
   use_insecure    = false                     # Can use MONAD_USE_INSECURE env var

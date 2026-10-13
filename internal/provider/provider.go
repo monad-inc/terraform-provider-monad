@@ -44,7 +44,7 @@ func (p *MonadProvider) Schema(ctx context.Context, req provider.SchemaRequest, 
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
 			"base_url": schema.StringAttribute{
-				MarkdownDescription: "Base URL for the Monad API. Can also be set with the MONAD_BASE_URL environment variable.",
+				MarkdownDescription: "Base URL of the Monad platform, without the `/api` suffix. Can also be set with the MONAD_BASE_URL environment variable. Defaults to `https://app.monad.com`.",
 				Optional:            true,
 			},
 			"api_token": schema.StringAttribute{
@@ -86,7 +86,7 @@ func (p *MonadProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	}
 
 	if baseURL == "" {
-		baseURL = "https://beta.monad.com"
+		baseURL = "https://app.monad.com"
 	}
 
 	apiToken := os.Getenv("MONAD_API_TOKEN")
