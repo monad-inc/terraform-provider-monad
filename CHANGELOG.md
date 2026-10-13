@@ -4,7 +4,7 @@ All notable changes to this provider are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/). While the provider is pre-1.0,
 breaking changes are released as minor version bumps.
 
-## Unreleased
+## 0.5.2
 
 ### Fixed
 
@@ -33,6 +33,8 @@ breaking changes are released as minor version bumps.
   warning, so the rotation could be missed. (ENG-10511)
 
 ## 0.5.1
+
+Never tagged. These changes first ship in 0.5.2; there is no 0.5.1 release.
 
 ### Changed
 
