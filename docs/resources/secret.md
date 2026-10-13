@@ -97,6 +97,8 @@ This resource exports the following attributes in addition to the arguments abov
 
 Each operation runs under its own deadline. A value here may exceed the provider default, so one slow secret can be given more time without raising the budget for every call.
 
+A create that outlives its `create` timeout is not simply reported as failed, because the API can finish the create after the provider stops waiting. Creating a secret upserts by `name`, so the provider then polls the organization's secrets for up to two minutes for the secret with that `name`, however old it is: a match is adopted into state with a warning, and none is reported as "not created, safe to retry".
+
 ## Import
 
 In Terraform v1.5.0 and later, use an [`import` block](https://developer.hashicorp.com/terraform/language/import) to import secrets using the secret `id`. For example:

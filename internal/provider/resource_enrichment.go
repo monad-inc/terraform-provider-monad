@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -116,6 +118,14 @@ func (r *ResourceEnrichment) Schema(
 							"detect when the write-only secret values change. Managed " +
 							"by the provider.",
 						Computed: true,
+						// Keep the stored hash when some other attribute
+						// changes; otherwise any diff (e.g. a `timeouts` block
+						// after import) shows it as "known after apply".
+						// modifyConnectorPlanForSecrets still marks it unknown
+						// on a genuine rotation.
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.UseStateForUnknown(),
+						},
 					},
 				},
 			},
@@ -135,6 +145,9 @@ func (r *ResourceEnrichment) Create(
 		return
 	}
 
+	// The adopt-after-timeout lookup must outlive the create timeout, so it
+	// uses the parent context (request_timeout still bounds each request).
+	parentCtx := ctx
 	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Create, r.client.RequestTimeout, &resp.Diagnostics)
 	defer cancel()
 	if resp.Diagnostics.HasError() {
@@ -161,19 +174,19 @@ func (r *ResourceEnrichment) Create(
 		},
 	}
 
+	startedAt := time.Now().UTC()
 	enrichment, monadResp, err := r.client.OrganizationEnrichmentsAPI.
 		CreateEnrichment(ctx, r.client.OrganizationID).
 		CreateEnrichmentRequest(monad.RoutesV3CreateEnrichmentRequestAsCreateEnrichmentRequest(&request)).
 		Execute()
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Client Error",
-			fmt.Sprintf(
-				"Unable to create enrichment, got error: %s. Response: %s",
-				err,
-				getResponseBody(monadResp),
-			),
-		)
+	createdID, ok := createOrAdopt(parentCtx, &resp.Diagnostics, adoptTarget{
+		Kind:      "enrichment",
+		Name:      data.Name.ValueString(),
+		Type:      data.ComponentType.ValueString(),
+		StartedAt: startedAt,
+		List:      r.listForAdopt,
+	}, enrichment.GetId(), err, monadResp)
+	if !ok {
 		return
 	}
 
@@ -182,7 +195,7 @@ func (r *ResourceEnrichment) Create(
 	// type must be preserved — rebuilding from the response trips "Provider
 	// produced inconsistent result after apply"). Secrets are write-only, so
 	// they are nulled in state and fingerprinted into secrets_hash.
-	data.ID = types.StringValue(*enrichment.Id)
+	data.ID = types.StringValue(createdID)
 	if err := finalizeConnectorSecrets(ctx, r.client.OrganizationID, &data, secrets); err != nil {
 		resp.Diagnostics.AddError("Failed to fingerprint enrichment secrets", err.Error())
 		return
@@ -384,4 +397,19 @@ func (r *ResourceEnrichment) ImportState(
 	resp *resource.ImportStateResponse,
 ) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// listForAdopt is the adoptLister for enrichments.
+func (r *ResourceEnrichment) listForAdopt(ctx context.Context, limit, offset int32) ([]adoptCandidate, *int32, *http.Response, error) {
+	page, httpResp, err := r.client.OrganizationEnrichmentsAPI.ListEnrichments(ctx, r.client.OrganizationID).
+		Limit(limit).Offset(offset).Execute()
+	if err != nil || page == nil {
+		return nil, nil, httpResp, err
+	}
+	out := make([]adoptCandidate, 0, len(page.Enrichments))
+	for _, it := range page.Enrichments {
+		out = append(out, adoptCandidate{ID: it.Id, Name: it.Name, Type: it.Type, CreatedAt: it.CreatedAt})
+	}
+	total, _ := page.Pagination.GetTotalOk()
+	return out, total, httpResp, nil
 }

@@ -125,6 +125,8 @@ This resource exports the following attributes in addition to the arguments abov
 
 Each operation runs under its own deadline. A value here may exceed the provider default, so one slow enrichment can be given more time without raising the budget for every call.
 
+A create that outlives its `create` timeout is not simply reported as failed, because the API can finish the create after the provider stops waiting. The provider then polls the organization's enrichments for up to two minutes for an enrichment with the same `name` and `type` created since the request started: exactly one match is adopted into state with a warning, none is reported as "not created, safe to retry", and several are listed by `id` with a request to [import](#import) the right one rather than guess.
+
 ## Import
 
 In Terraform v1.5.0 and later, use an [`import` block](https://developer.hashicorp.com/terraform/language/import) to import enrichments using the enrichment `id`. For example:
@@ -142,3 +144,5 @@ Using `terraform import`, import enrichments using the enrichment `id`. For exam
 # Import an enrichment by its ID (shown in the Monad UI and returned by the API).
 terraform import monad_enrichment.example 5d3a9c1e-7f2b-4a6d-b8e0-9c1f2a3b4d50
 ```
+
+Monad never returns secret material, so an imported enrichment has a null `config.secrets_hash`. If the configuration declares `secrets`, the first plan after import shows a one-time update that re-sends them and records the fingerprint.

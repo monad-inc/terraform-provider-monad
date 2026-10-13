@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -172,6 +174,9 @@ func (r *ResourceAlertRule) Create(
 		return
 	}
 
+	// The adopt-after-timeout lookup must outlive the create timeout, so it
+	// uses the parent context (request_timeout still bounds each request).
+	parentCtx := ctx
 	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Create, r.client.RequestTimeout, &resp.Diagnostics)
 	defer cancel()
 	if resp.Diagnostics.HasError() {
@@ -208,21 +213,21 @@ func (r *ResourceAlertRule) Create(
 		RuleConfig:  ruleConfig,
 	}
 
+	startedAt := time.Now().UTC()
 	rule, monadResp, err := r.client.AlertRulesAPI.
 		CreateAlertRule(ctx, r.client.OrganizationID).
 		CreateAlertRuleRequest(
 			monad.RoutesV3CreateAlertRuleRequestAsCreateAlertRuleRequest(&request),
 		).
 		Execute()
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Client Error",
-			fmt.Sprintf(
-				"Unable to create alert rule, got error: %s. Response: %s",
-				err,
-				getResponseBody(monadResp),
-			),
-		)
+	createdID, ok := createOrAdopt(parentCtx, &resp.Diagnostics, adoptTarget{
+		Kind:      "alert rule",
+		Name:      data.Name.ValueString(),
+		Type:      data.Type.ValueString(),
+		StartedAt: startedAt,
+		List:      r.listForAdopt,
+	}, rule.GetId(), err, monadResp)
+	if !ok {
 		return
 	}
 
@@ -231,7 +236,7 @@ func (r *ResourceAlertRule) Create(
 	// other attribute is plan-known and preserved verbatim (apply-consistency).
 	// rule_config in particular is a Dynamic whose planned cty type must not be
 	// rebuilt from the response.
-	data.ID = types.StringValue(rule.GetId())
+	data.ID = types.StringValue(createdID)
 	data.Active = types.BoolValue(active)
 
 	tflog.Trace(ctx, "created an alert rule resource")
@@ -521,4 +526,19 @@ func reconcileAlertRulePipelineIDs(
 		return prior, nil
 	}
 	return types.SetValueFrom(ctx, types.StringType, apiIDs)
+}
+
+// listForAdopt is the adoptLister for alert rules.
+func (r *ResourceAlertRule) listForAdopt(ctx context.Context, limit, offset int32) ([]adoptCandidate, *int32, *http.Response, error) {
+	page, httpResp, err := r.client.AlertRulesAPI.ListAlertRules(ctx, r.client.OrganizationID).
+		Limit(limit).Offset(offset).Execute()
+	if err != nil || page == nil {
+		return nil, nil, httpResp, err
+	}
+	out := make([]adoptCandidate, 0, len(page.AlertRules))
+	for _, it := range page.AlertRules {
+		out = append(out, adoptCandidate{ID: it.Id, Name: it.Name, Type: it.Type, CreatedAt: it.CreatedAt})
+	}
+	total, _ := page.Pagination.GetTotalOk()
+	return out, total, httpResp, nil
 }

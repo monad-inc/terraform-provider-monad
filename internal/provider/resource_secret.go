@@ -3,6 +3,8 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -136,6 +138,9 @@ func (r *ResourceSecret) Create(
 		return
 	}
 
+	// The adopt-after-timeout lookup must outlive the create timeout, so it
+	// uses the parent context (request_timeout still bounds each request).
+	parentCtx := ctx
 	ctx, cancel := withOperationTimeout(ctx, data.Timeouts.Create, r.client.RequestTimeout, &resp.Diagnostics)
 	defer cancel()
 	if resp.Diagnostics.HasError() {
@@ -148,26 +153,27 @@ func (r *ResourceSecret) Create(
 		Value:       data.Value.ValueStringPointer(),
 	}
 
+	startedAt := time.Now().UTC()
 	secret, monadResp, err := r.client.SecretsAPI.
 		CreateSecret(ctx, r.client.OrganizationID).
 		CreateSecretRequest(monad.RoutesV2CreateOrUpdateSecretRequestAsCreateSecretRequest(&request)).
 		Execute()
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Client Error",
-			fmt.Sprintf(
-				"Unable to create secret, got error: %s. Response: %s",
-				err,
-				getResponseBody(monadResp),
-			),
-		)
+	createdID, ok := createOrAdopt(parentCtx, &resp.Diagnostics, adoptTarget{
+		Kind:      "secret",
+		Name:      data.Name.ValueString(),
+		StartedAt: startedAt,
+		// Create upserts by name, so the secret it touched may predate it.
+		AnyAge: true,
+		List:   r.listForAdopt,
+	}, secret.GetId(), err, monadResp)
+	if !ok {
 		return
 	}
 
 	// Only the computed id is taken from the response; name/description stay
 	// as planned (apply consistency, see CLAUDE.md). The write-only value is
 	// fingerprinted so a later rotation is detectable (ModifyPlan).
-	data.ID = types.StringValue(*secret.Id)
+	data.ID = types.StringValue(createdID)
 	data.ValueHash = types.StringValue(r.computeValueHash(ctx, data.Value.ValueString()))
 
 	tflog.Trace(ctx, "created a secret resource")
@@ -392,4 +398,19 @@ func (r *ResourceSecret) ImportState(
 	resp *resource.ImportStateResponse,
 ) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+}
+
+// listForAdopt is the adoptLister for secrets.
+func (r *ResourceSecret) listForAdopt(ctx context.Context, limit, offset int32) ([]adoptCandidate, *int32, *http.Response, error) {
+	page, httpResp, err := r.client.SecretsAPI.ListSecrets(ctx, r.client.OrganizationID).
+		Limit(limit).Offset(offset).Execute()
+	if err != nil || page == nil {
+		return nil, nil, httpResp, err
+	}
+	out := make([]adoptCandidate, 0, len(page.Secrets))
+	for _, it := range page.Secrets {
+		out = append(out, adoptCandidate{ID: it.Id, Name: it.Name, CreatedAt: it.CreatedAt})
+	}
+	total, _ := page.Pagination.GetTotalOk()
+	return out, total, httpResp, nil
 }
