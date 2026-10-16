@@ -13,6 +13,25 @@ breaking changes are released as minor version bumps.
   `partition_format`, and the secret-reference output example also omitted
   `format_config`. The API now requires all of them, so copying either example
   failed with `400 Bad Request`.
+- **Documentation: `monad_alert_rule` no longer presents
+  `billing-metrics-cost-budget` as a type the provider can create.** A billing
+  account can span several Monad organizations, but an API key is scoped to a
+  single organization, so the Monad API refuses billing operations from API
+  keys. The provider authenticates with an API key, so creating a billing alert
+  rule always failed with `400 Bad Request`. The page now says so, and the
+  "Organization spend" example is removed. Create billing alert rules in the
+  Monad UI.
+
+### Changed
+
+- **`monad_alert_rule` rejects `billing-metrics-cost-budget` at validate time.**
+  `terraform validate` and `terraform plan` now report "Billing alert rules
+  cannot be managed with Terraform" on the `type` attribute, instead of the
+  plan succeeding and the apply failing with `400 Bad Request`. A `type` that
+  is unknown until apply is still left to the API. Such a rule could never be
+  created with this provider. If you imported one that was created in the UI,
+  remove it from your configuration and run
+  `terraform state rm monad_alert_rule.<name>`; the rule stays in Monad.
 
 ## 0.5.2
 
