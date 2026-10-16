@@ -231,6 +231,24 @@ func (r *ResourceOutput) Update(
 		return
 	}
 
+	// Re-sending an inline secret under its existing name would 409; reuse the
+	// secret this output already references instead (ENG-11264). The configured
+	// secrets are still what gets hashed.
+	sendSecrets, diags := secretsForUpdate(ctx, r.client, "output", data.ID.ValueString(), secrets,
+		func(ctx context.Context) (map[string]any, *http.Response, error) {
+			current, httpResp, err := r.client.OrganizationOutputsAPI.
+				GetOrganizationOutput(ctx, r.client.OrganizationID, data.ID.ValueString()).
+				Execute()
+			if err != nil {
+				return nil, httpResp, err
+			}
+			return current.Config.GetSecrets(), httpResp, nil
+		})
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	request := monad.RoutesV2PutOutputRequest{
 		Name:        data.Name.ValueStringPointer(),
 		Description: data.Description.ValueStringPointer(),
@@ -240,7 +258,7 @@ func (r *ResourceOutput) Update(
 				MapmapOfStringAny: &settings,
 			},
 			Secrets: &monad.SecretProcessesorOutputConfigSecrets{
-				MapmapOfStringAny: &secrets,
+				MapmapOfStringAny: &sendSecrets,
 			},
 		},
 	}
