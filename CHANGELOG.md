@@ -4,6 +4,16 @@ All notable changes to this provider are documented here. This project adheres
 to [Semantic Versioning](https://semver.org/). While the provider is pre-1.0,
 breaking changes are released as minor version bumps.
 
+## Unreleased
+
+### Fixed
+
+- **Documentation: the S3 examples on the `monad_input` and `monad_secret`
+  pages now apply.** The inline-secret input example omitted `compression` and
+  `partition_format`, and the secret-reference output example also omitted
+  `format_config`. The API now requires all of them, so copying either example
+  failed with `400 Bad Request`.
+
 ## 0.5.2
 
 ### Fixed

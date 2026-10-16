@@ -13,10 +13,12 @@ resource "monad_input" "archive_static_creds" {
 
   config {
     settings = {
-      bucket = var.ingest_bucket
-      region = "us-west-2"
-      prefix = "cloudtrail"
-      format = "jsonl"
+      bucket           = var.ingest_bucket
+      region           = "us-west-2"
+      prefix           = "cloudtrail"
+      compression      = "none"
+      format           = "jsonl"
+      partition_format = "simple date"
     }
 
     secrets = {
