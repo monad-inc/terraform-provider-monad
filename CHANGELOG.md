@@ -22,6 +22,17 @@ breaking changes are released as minor version bumps.
   "Organization spend" example is removed. Create billing alert rules in the
   Monad UI.
 
+### Changed
+
+- **`monad_alert_rule` rejects `billing-metrics-cost-budget` at validate time.**
+  `terraform validate` and `terraform plan` now report "Billing alert rules
+  cannot be managed with Terraform" on the `type` attribute, instead of the
+  plan succeeding and the apply failing with `400 Bad Request`. A `type` that
+  is unknown until apply is still left to the API. Such a rule could never be
+  created with this provider. If you imported one that was created in the UI,
+  remove it from your configuration and run
+  `terraform state rm monad_alert_rule.<name>`; the rule stays in Monad.
+
 ## 0.5.2
 
 ### Fixed
