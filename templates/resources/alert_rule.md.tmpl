@@ -100,7 +100,7 @@ Fires in real time when a pipeline log event matches every configured filter. At
 
 Fires when the organization's current invoice exceeds a budget. See [Billing Metrics Cost Budget Alert](https://app.monad.com/docs/alerts/billing-metrics-cost-budget).
 
-~> **The provider cannot create this type.** A billing account can span several Monad organizations, but an API key is scoped to a single organization, so the Monad API does not accept billing operations from API keys. The provider authenticates with an API key, so a `billing-metrics-cost-budget` rule fails on create with `400 Bad Request: billing alert rules cannot be created with API key authentication; use an interactive user session`. Create billing alert rules in the Monad UI and leave them out of your Terraform configuration.
+~> **The provider cannot create this type.** A billing account can span several Monad organizations, but an API key is scoped to a single organization, so the Monad API does not accept billing operations from API keys. The provider authenticates with an API key, so it rejects `type = "billing-metrics-cost-budget"` when the configuration is validated, before anything is sent to the API (`terraform validate` and `terraform plan` both report it). Create billing alert rules in the Monad UI and leave them out of your Terraform configuration.
 
 ## Attribute Reference
 
