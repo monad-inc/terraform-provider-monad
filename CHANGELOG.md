@@ -13,6 +13,14 @@ breaking changes are released as minor version bumps.
   `partition_format`, and the secret-reference output example also omitted
   `format_config`. The API now requires all of them, so copying either example
   failed with `400 Bad Request`.
+- **Documentation: `monad_alert_rule` no longer presents
+  `billing-metrics-cost-budget` as a type the provider can create.** A billing
+  account can span several Monad organizations, but an API key is scoped to a
+  single organization, so the Monad API refuses billing operations from API
+  keys. The provider authenticates with an API key, so creating a billing alert
+  rule always failed with `400 Bad Request`. The page now says so, and the
+  "Organization spend" example is removed. Create billing alert rules in the
+  Monad UI.
 
 ## 0.5.2
 
