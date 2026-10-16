@@ -99,8 +99,8 @@ resource "monad_input" "archive_static_creds" {
       # Reference a secret managed elsewhere in this configuration.
       secret_key = { id = monad_secret.aws_secret_key.id }
 
-      # Or create one inline. The secret is stored by name, so rotate the
-      # value by giving it a new name too.
+      # Or create one inline. Changing the value under the same name updates
+      # that secret in place; a new name creates a new secret.
       access_key = {
         name        = "s3-archive-access-key"
         description = "Access key ID for the archive bucket reader"
@@ -131,7 +131,7 @@ The `config` block supports the following:
 * `settings` - (Optional) The connector's settings as a free-form value. Keys are the connector's API field names, documented on its page in the [Monad inputs catalog](https://app.monad.com/docs/inputs) — the "API Examples" section shows the exact JSON. Write it as a plain HCL object; the provider sends whatever Terraform type the expression produces and hands the same value back after apply. Wrapping the value in `jsondecode(jsonencode({ ... }))` is a no-op for a literal and is only useful to flatten a set or map that arrives from a typed variable or another resource's attribute into JSON arrays and objects — and it has a cost: one sensitive value inside makes the whole object `(sensitive value)` in the plan.
 * `secrets` - (Optional, Sensitive, Write-only) The connector's credentials as a map keyed by the connector's secret field names. Each value is one of:
     * `{ id = "..." }` — a reference to an existing secret, usually `monad_secret.example.id`.
-    * `{ name = "...", description = "...", value = "..." }` — a new secret created inline, all three non-empty. Monad stores inline secrets by name, so give a rotated value a new name too.
+    * `{ name = "...", description = "...", value = "..." }` — a new secret created inline, all three non-empty. Changing its value or description under the same name updates that secret in place; a new name creates a new secret (the old one stays in Monad). A name already used by a secret this connector does not reference is refused by the API.
 
     A bare string is rejected. The value is write-only: it is sent to the Monad API but never persisted in Terraform state, and Monad never echoes secret material back. Rotation is detected through `secrets_hash`.
 

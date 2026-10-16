@@ -8,6 +8,19 @@ breaking changes are released as minor version bumps.
 
 ### Fixed
 
+- **Re-sending an inline secret on a connector no longer fails with `409
+  Conflict`.** The API creates every inline secret (`{ name, value,
+  description }`) as a new secret and refuses an existing name, so updating a
+  `monad_input`, `monad_output` or `monad_enrichment` that kept an inline
+  secret's name failed with "secrets with this name already exists". That
+  covered the one-time update after `terraform import` and any value change
+  that kept the name. On update, the provider now updates the secret the slot
+  already references, in place, when its name matches, and sends a reference
+  to it. A new name still creates a new secret. A name that belongs to a secret
+  the component does not reference is still refused by the API, so an
+  unrelated secret is never overwritten. When the updated secret is also used
+  by other components, the apply warns and names them. (ENG-11264)
+
 - **Documentation: the S3 examples on the `monad_input` and `monad_secret`
   pages now apply.** The inline-secret input example omitted `compression` and
   `partition_format`, and the secret-reference output example also omitted
