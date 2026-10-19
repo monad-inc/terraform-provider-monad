@@ -43,9 +43,15 @@ resource "monad_output" "archive" {
 
   config {
     settings = {
-      bucket = var.archive_bucket
-      region = "us-west-2"
-      prefix = "archive"
+      bucket           = var.archive_bucket
+      region           = "us-west-2"
+      prefix           = "archive"
+      compression      = "none"
+      partition_format = "simple date"
+      format_config = {
+        Format      = "json"
+        json_format = { type = "line" }
+      }
     }
 
     secrets = {
