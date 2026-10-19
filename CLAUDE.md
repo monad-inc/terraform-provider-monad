@@ -178,7 +178,12 @@ never echoes raw secrets (it returns references/ids). The pattern:
     mark it Unknown and let Update fill it.
 - Secrets must be a **structured value**, never a bare string: a new secret
   `{ value, name, description }` (all non-empty) or a reference `{ id }`. Monad
-  stores inline secrets **by name**, so a rotated value needs a fresh name.
+  creates every inline secret as a **new** secret and 409s on an existing name,
+  so on Update `secretsForUpdate` (`resource_connector_inline_secrets.go`)
+  sends an inline secret as `{ id }` after updating, in place, the secret the
+  slot already references when its name matches (ENG-11264). A new name still
+  creates a new secret; a name owned by an unrelated secret still 409s. Hash
+  the *configured* secrets, never the rewritten ones, or the next plan diffs.
 
 ### Never swallow diagnostics
 

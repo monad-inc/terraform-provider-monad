@@ -296,6 +296,24 @@ func (r *ResourceEnrichment) Update(
 		return
 	}
 
+	// Re-sending an inline secret under its existing name would 409; reuse the
+	// secret this enrichment already references instead (ENG-11264). The configured
+	// secrets are still what gets hashed.
+	sendSecrets, diags := secretsForUpdate(ctx, r.client, "enrichment", data.ID.ValueString(), secrets,
+		func(ctx context.Context) (map[string]any, *http.Response, error) {
+			current, httpResp, err := r.client.OrganizationEnrichmentsAPI.
+				GetEnrichment(ctx, r.client.OrganizationID, data.ID.ValueString()).
+				Execute()
+			if err != nil {
+				return nil, httpResp, err
+			}
+			return current.Config.GetSecrets(), httpResp, nil
+		})
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	request := monad.RoutesV3PutEnrichmentRequest{
 		Name:        data.Name.ValueStringPointer(),
 		Description: data.Description.ValueStringPointer(),
@@ -305,7 +323,7 @@ func (r *ResourceEnrichment) Update(
 				MapmapOfStringAny: &settings,
 			},
 			Secrets: &monad.SecretProcessesorEnrichmentConfigSecrets{
-				MapmapOfStringAny: &secrets,
+				MapmapOfStringAny: &sendSecrets,
 			},
 		},
 	}
