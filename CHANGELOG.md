@@ -6,6 +6,15 @@ breaking changes are released as minor version bumps.
 
 ## Unreleased
 
+### Added
+
+- **`monad_sso_connection` resource.** Manages a SAML SSO connection: `name`,
+  `description`, `email_domains`, `public_name`, `session_timeout_minutes`
+  and a `saml` block (`entity_id`, `metadata_url`). The connection holds no
+  secrets; Monad reads the IdP certificate from the metadata URL.
+  `email_domains` and `saml.entity_id` cannot be changed by the API, so
+  changing them replaces the connection.
+
 ### Fixed
 
 - **Documentation: the S3 examples on the `monad_input` and `monad_secret`
