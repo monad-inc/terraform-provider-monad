@@ -42,6 +42,9 @@ func connectorValues(t *testing.T, typ tftypes.Object, secrets, hash tftypes.Val
 		"name":        tftypes.NewValue(tftypes.String, "example"),
 		"description": tftypes.NewValue(tftypes.String, nil),
 		"type":        tftypes.NewValue(tftypes.String, "demo"),
+		"created_at":  tftypes.NewValue(tftypes.String, nil),
+		"updated_at":  tftypes.NewValue(tftypes.String, nil),
+		"managed_by":  tftypes.NewValue(tftypes.String, nil),
 		"config": tftypes.NewValue(configType, map[string]tftypes.Value{
 			"settings":     tftypes.NewValue(tftypes.DynamicPseudoType, nil),
 			"secrets":      secrets,

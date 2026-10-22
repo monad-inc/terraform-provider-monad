@@ -458,6 +458,9 @@ The API rebuilds every edge from the request on each pipeline save, so an edge w
 This resource exports the following attributes in addition to the arguments above:
 
 * `id` - UUID of the pipeline. Reference it from `monad_alert_rule.pipeline_ids`, and use it to build the push-ingest host for HTTP inputs (`https://<id>.data.monad.com`).
+* `created_at` - When the object was created, as an RFC 3339 timestamp set by the API.
+* `updated_at` - When the object was last changed. Shown as `(known after apply)` whenever the resource has other changes, because every write moves it.
+* `managed_by` - Who manages the object: `customer` for objects you create; `system` or `internal` for objects Monad maintains.
 
 ### Inputs and outputs
 
@@ -469,6 +472,9 @@ This resource exports the following attributes in addition to the arguments abov
 | `nodes` | Input | Set; server-generated slugs and node-instance IDs are not surfaced |
 | `edges` | Input | Set; refreshed from the API on read |
 | `timeouts` | Input | Provider-side deadlines; never sent to the API |
+| `created_at` | Output | Set by the API |
+| `updated_at` | Output | Changes on every write |
+| `managed_by` | Output | `customer`, `system` or `internal` |
 | `id` | Output | |
 
 ## Timeouts

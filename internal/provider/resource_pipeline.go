@@ -31,6 +31,9 @@ type ResourcePipeline struct {
 
 type ResourcePipelineModel struct {
 	Timeouts    timeouts.Value         `tfsdk:"timeouts"`
+	CreatedAt   types.String           `tfsdk:"created_at"`
+	UpdatedAt   types.String           `tfsdk:"updated_at"`
+	ManagedBy   types.String           `tfsdk:"managed_by"`
 	ID          types.String           `tfsdk:"id"`
 	Name        types.String           `tfsdk:"name"`
 	Description types.String           `tfsdk:"description"`
@@ -365,6 +368,7 @@ func (r *ResourcePipeline) Schema(
 			},
 		},
 	}
+	withComputedMeta(resp.Schema.Attributes, true)
 }
 
 // buildPipelineRequestNodes/Edges translate the plan model into the SDK request
@@ -492,6 +496,10 @@ func (r *ResourcePipeline) Create(
 
 	tflog.Trace(ctx, "created a pipeline resource")
 
+	data.CreatedAt = metaString(pipeline.GetCreatedAt())
+	data.UpdatedAt = metaString(pipeline.GetUpdatedAt())
+	data.ManagedBy = managedByString(pipeline.ManagedBy)
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -583,6 +591,10 @@ func (r *ResourcePipeline) Read(
 	// API view populates. Only genuine topology drift is written back.
 	data.Nodes = reconcilePipelineNodes(data.Nodes, buildPipelineStateNodes(pipeline))
 	data.Edges = reconcilePipelineEdges(data.Edges, buildPipelineStateEdges(pipeline))
+
+	data.CreatedAt = metaString(pipeline.GetCreatedAt())
+	data.UpdatedAt = metaString(pipeline.GetUpdatedAt())
+	data.ManagedBy = managedByString(pipeline.ManagedBy)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -955,6 +967,10 @@ func (r *ResourcePipeline) Update(
 	data.Enabled = types.BoolValue(enabled)
 
 	tflog.Trace(ctx, "updated a pipeline resource")
+
+	data.CreatedAt = metaString(pipeline.GetCreatedAt())
+	data.UpdatedAt = metaString(pipeline.GetUpdatedAt())
+	data.ManagedBy = managedByString(pipeline.ManagedBy)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
