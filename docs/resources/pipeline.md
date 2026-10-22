@@ -262,6 +262,61 @@ resource "monad_pipeline" "every_rule" {
 }
 ```
 
+### Grouping rules (`and` of an `or`)
+
+```terraform
+# A condition group: route console logins and role assumptions that carry a
+# user identity. The edge's own operator (`and`) combines a group (`or` over two
+# `equals` rules) with a plain rule. An element sets either `type_id` (a rule)
+# or `operator` (a group); a group's `conditions` hold rules only, because the
+# API caps a condition at three levels.
+resource "monad_pipeline" "grouped" {
+  name = "CloudTrail sign-in activity"
+
+  nodes {
+    slug           = "source"
+    component_type = "input"
+    component_id   = monad_input.demo.id
+  }
+  nodes {
+    slug           = "siem"
+    component_type = "output"
+    component_id   = monad_output.siem.id
+  }
+
+  edges {
+    from_node_instance_slug = "source"
+    to_node_instance_slug   = "siem"
+    condition {
+      operator = "and"
+      conditions {
+        operator = "or"
+        conditions {
+          type_id = "equals"
+          config {
+            key   = "eventName"
+            value = "ConsoleLogin"
+          }
+        }
+        conditions {
+          type_id = "equals"
+          config {
+            key   = "eventName"
+            value = "AssumeRole"
+          }
+        }
+      }
+      conditions {
+        type_id = "key_exists"
+        config {
+          key = "userIdentity"
+        }
+      }
+    }
+  }
+}
+```
+
 ### Schema drift detection on an edge
 
 ```terraform
@@ -404,17 +459,28 @@ Each `edges` block connects two nodes and supports the following:
 
 #### `edges.condition` Block
 
-The root of a condition is always a **logical** operator that combines zero or more **leaf** conditions. A single leaf still needs a wrapping operator (`and` with one child is the idiom).
+The root of a condition is always a **logical** operator that combines zero or more children. Each child is a **rule** that tests one field, or a **group** that applies its own operator to a list of rules. A single rule still needs a wrapping operator (`and` with one child is the idiom).
+
+The API allows three levels: the edge's operator, a group, and the group's rules. So a group's children are rules only, and a group cannot contain another group.
 
 * `operator` - (Required) How the child `conditions` combine. One of `always` (pass every record), `never`, `and`, `or`, `nor` (pass when no child matches), `xor`.
-* `conditions` - (Optional) List of leaf conditions, evaluated by `operator`. [See below](#edgesconditionconditions-block). Omit for `always` and `never`.
+* `conditions` - (Optional) List of rules and groups, evaluated by `operator`. [See below](#edgesconditionconditions-block). Omit for `always` and `never`.
 
 #### `edges.condition.conditions` Block
 
-Each leaf tests one field of the record.
+Each element is either a **rule**, which sets `type_id` and `config`, or a **group**, which sets `operator` and nested `conditions`. Setting both, a group with `config`, a rule with nested `conditions`, or an empty group (except `always`/`never`) fails validation.
 
-* `type_id` - (Optional) The rule to evaluate. One of `equals`, `equals_any`, `contains`, `starts_with`, `ends_with`, `greater_than`, `less_than`, `matches_regex`, `key_exists`, `is_empty`, `sample`. A leaf without a `type_id` fails validation. An unrecognized rule is sent as written with a warning, so a rule the API adds later still works.
+* `type_id` - (Optional) Makes the element a rule. The rule to evaluate. One of `equals`, `equals_any`, `contains`, `starts_with`, `ends_with`, `greater_than`, `less_than`, `matches_regex`, `key_exists`, `is_empty`, `sample`. A leaf without a `type_id` fails validation. An unrecognized rule is sent as written with a warning, so a rule the API adds later still works.
+* `operator` - (Optional) Makes the element a group. One of `and`, `or`, `nor`, `xor`, `always`, `never`, applied to the group's `conditions`.
+* `conditions` - (Optional) The group's rules. [See below](#edgesconditionconditionsconditions-block). Only valid with `operator`.
 * `config` - (Optional) The rule's parameters. [See below](#edgesconditionconditionsconfig-block). Which fields apply depends on `type_id`; the provider rejects a missing required field or a field the rule does not read at plan time, rather than letting the API accept a leaf that silently routes nothing.
+
+#### `edges.condition.conditions.conditions` Block
+
+A rule inside a group. It takes the same arguments as a rule directly under the edge condition:
+
+* `type_id` - (Optional) The rule to evaluate; see `edges.condition.conditions` above.
+* `config` - (Optional) The rule's parameters, exactly as in the `config` block below.
 
 #### `edges.condition.conditions.config` Block
 
