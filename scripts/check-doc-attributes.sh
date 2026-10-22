@@ -27,6 +27,7 @@ internal/provider/resource_transform.go:templates/resources/transform.md.tmpl
 internal/provider/resource_pipeline.go:templates/resources/pipeline.md.tmpl
 internal/provider/resource_secret.go:templates/resources/secret.md.tmpl
 internal/provider/resource_alert_rule.go:templates/resources/alert_rule.md.tmpl
+internal/provider/resource_api_key.go:templates/resources/api_key.md.tmpl
 "
 
 total=0; missing=0

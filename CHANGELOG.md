@@ -6,6 +6,15 @@ breaking changes are released as minor version bumps.
 
 ## Unreleased
 
+### Added
+
+- **`monad_api_key` resource (PRO-713).** Create, rename, rotate, import and
+  delete organization API keys. The token is returned by the API only at
+  create and regenerate, so it is a sensitive attribute stored in state.
+  Changing `expiration_time` regenerates the key in place (same id, new token,
+  old token revoked); changing `role_id` replaces it. A create that times out
+  and is adopted is regenerated immediately so state holds a usable token.
+
 ### Fixed
 
 - **Documentation: the S3 examples on the `monad_input` and `monad_secret`
