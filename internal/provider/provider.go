@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	"github.com/monad-inc/terraform-provider-monad/internal/provider/client"
 )
@@ -77,6 +78,17 @@ func (p *MonadProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 
 	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// A setting that depends on a resource not yet created (for example an
+	// aliased provider whose organization_id is a monad_organization being
+	// created in the same apply) is unknown during plan. Configure nothing
+	// rather than fail: resources plan without a client, and Terraform
+	// configures the provider again with the real values before applying.
+	if data.BaseURL.IsUnknown() || data.APIToken.IsUnknown() || data.OrganizationID.IsUnknown() ||
+		data.UseInsecure.IsUnknown() || data.RequestTimeout.IsUnknown() {
+		tflog.Debug(ctx, "provider configuration has unknown values; deferring client setup to apply")
 		return
 	}
 
@@ -170,6 +182,7 @@ func (p *MonadProvider) Resources(ctx context.Context) []func() resource.Resourc
 		NewResourcePipeline,
 		NewResourceEnrichment,
 		NewResourceAlertRule,
+		NewResourceOrganization,
 	}
 }
 
