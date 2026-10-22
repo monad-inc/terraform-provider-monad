@@ -8,6 +8,26 @@ breaking changes are released as minor version bumps.
 
 ### Fixed
 
+- **Applying a pipeline no longer silently re-enables nodes and edges
+  disabled in the UI, and applying an alert rule no longer resets
+  `invert_selection` (ENG-11404).** The update requests replace the whole node
+  and edge sets and the whole alert rule, and the provider did not model these
+  three fields, so it sent every node as enabled, every edge as not disabled,
+  and `invert_selection = false` on every apply. `plan` never showed the
+  change. An exclude-list alert rule edited by any apply therefore started
+  alerting on exactly the pipelines it was meant to skip.
+
+### Added
+
+- `monad_pipeline`: `nodes.enabled` and `edges.disabled`. Omitted means enabled,
+  as before. A toggle made outside Terraform now shows as drift on the next
+  plan, and applying returns the node or edge to the configured state; declare
+  `enabled = false` / `disabled = true` to keep it disabled. (Unlike the
+  pipeline-level `enabled`, these can't adopt the server value when omitted:
+  they sit inside set blocks, where a computed attribute would plan as
+  unknown on every element.)
+- `monad_alert_rule`: `invert_selection`, default `false`, refreshed on read.
+
 - **Documentation: the S3 examples on the `monad_input` and `monad_secret`
   pages now apply.** The inline-secret input example omitted `compression` and
   `partition_format`, and the secret-reference output example also omitted
