@@ -8,6 +8,13 @@ breaking changes are released as minor version bumps.
 
 ### Added
 
+- **Lookup data sources for existing objects (PRO-719):** `monad_input`,
+  `monad_output`, `monad_transform`, `monad_enrichment`, `monad_pipeline` and
+  `monad_secret`, by `id` or exact `name`, so a configuration can reference an
+  object managed elsewhere without pasting its UUID. Components also expose
+  `pipeline_ids` (the pipelines that use them); pipelines expose `enabled`.
+  The secret data source returns metadata only, never the value.
+
 - **`monad_role` resource and `monad_role` / `monad_permissions` data sources
   (PRO-714).** `monad_role` manages a custom role, with permissions written as
   slugs (`pipeline:read`) and resolved to the catalog's IDs; an unknown slug

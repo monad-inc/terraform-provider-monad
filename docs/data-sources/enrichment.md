@@ -1,0 +1,38 @@
+---
+page_title: "monad_enrichment Data Source - monad"
+subcategory: ""
+description: |-
+  Looks up an existing enrichment by ID or name.
+---
+
+# Data Source: monad_enrichment
+
+Looks up an existing enrichment in the organization by `id` or exact `name`, so a configuration can reference one that is managed elsewhere (another Terraform configuration, or the Monad UI) without hard-coding its UUID. To manage the enrichment, use the [`monad_enrichment` resource](../resources/enrichment.md).
+
+## Example Usage
+
+```terraform
+data "monad_enrichment" "asset_context" {
+  name = "Asset context"
+}
+```
+
+## Argument Reference
+
+Exactly one of the following is required:
+
+* `id` - (Optional) ID of the enrichment. Set exactly one of `id` or `name`.
+* `name` - (Optional) Exact, case-sensitive name. Set exactly one of `id` or `name`. Names are unique per enrichment type in an organization.
+
+No match is an error that lists some of the names that do exist; an ID that does not exist is an error.
+
+## Attribute Reference
+
+* `id` - ID of the enrichment.
+* `name` - Name of the enrichment.
+* `description` - Description.
+* `type` - Connector type ID, such as `aws-s3`.
+* `pipeline_ids` - Set of IDs of the pipelines that use this enrichment. It reflects the organization when the data source is read, so a pipeline created in the same apply appears on the next plan.
+* `created_at` - When it was created (RFC 3339).
+* `updated_at` - When it was last changed (RFC 3339).
+* `managed_by` - `customer` for objects you create; `system` or `internal` for ones Monad maintains.
