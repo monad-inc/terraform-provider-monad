@@ -14,7 +14,7 @@ There is one set of rates per organization, so this resource is a singleton: dec
 Three platform rules shape how it behaves:
 
 * **It manages only what it declares.** The storage types in `costs` and the outputs in `output_costs` are managed; any other rate in the organization is left alone and never shows as drift. A change to a managed rate made outside Terraform does show as drift.
-* **A storage type's rate cannot be deleted, only overwritten.** A type with no rate is priced at $0, so removing a type from `costs`, or destroying the resource, sets its rate to `0`. That is indistinguishable from never having set it: the Storage Costs view lists types from the organization's outputs, not from stored rates, and prices both at $0. Only the API's rate list (and a later `terraform import`) still shows the type, with a `0`.
+* **A storage type's rate cannot be deleted, only overwritten.** A type with no rate is priced at $0, so removing a type from `costs`, or destroying the resource, sets its rate to `0`. Costs and savings come out the same as never having set it, but the type is no longer *unpriced*. The Storage Costs view shows its cost and savings columns as `0` instead of the `----` it shows for a type with no rate. Nothing (the UI, the API or Terraform) can make it unpriced again. A later `terraform import` also lists it, at `0`.
 * **A per-output rate can be removed.** Removing an output from `output_costs`, or destroying the resource, deletes its rate, and the output goes back to its storage type's default.
 
 ## Example Usage
