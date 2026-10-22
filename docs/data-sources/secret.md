@@ -1,0 +1,44 @@
+---
+page_title: "monad_secret Data Source - monad"
+subcategory: ""
+description: |-
+  Looks up an existing secret by ID or name.
+---
+
+# Data Source: monad_secret
+
+Looks up an existing secret in the organization by `id` or exact `name`, so a configuration can reference one that is managed elsewhere (another Terraform configuration, or the Monad UI) without hard-coding its UUID. To manage the secret, use the [`monad_secret` resource](../resources/secret.md).
+
+The secret's value is never exposed: the API does not return it.
+
+## Example Usage
+
+```terraform
+data "monad_secret" "shared" {
+  name = "shared-siem-token"
+}
+
+# Hand the ID to a connector managed elsewhere, or reference it inline:
+#   secrets = { <field> = { id = data.monad_secret.shared.id } }
+# using the field name from that connector's docs page.
+output "shared_secret_id" {
+  value = data.monad_secret.shared.id
+}
+```
+
+## Argument Reference
+
+Exactly one of the following is required:
+
+* `id` - (Optional) ID of the secret. Set exactly one of `id` or `name`.
+* `name` - (Optional) Exact, case-sensitive name. Set exactly one of `id` or `name`. Names are unique per secret type in an organization.
+
+No match is an error that lists some of the names that do exist; an ID that does not exist is an error.
+
+## Attribute Reference
+
+* `id` - ID of the secret.
+* `name` - Name of the secret.
+* `description` - Description.
+* `created_at` - When it was created (RFC 3339).
+* `updated_at` - When it was last changed (RFC 3339).

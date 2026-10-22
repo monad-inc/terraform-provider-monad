@@ -18,6 +18,9 @@ cd "$(dirname "$0")/.."
 
 # schema source file -> templates that document it (space-separated after the
 # colon). resource_connector.go is shared by monad_input and monad_output.
+# data_source_lookup.go is not mapped: it declares the union of attributes for
+# six lookup data sources, each of which exposes a subset, so their pages are
+# checked by hand.
 # A plain list rather than an associative array: macOS ships bash 3.2.
 sources="
 internal/provider/provider.go:templates/index.md.tmpl

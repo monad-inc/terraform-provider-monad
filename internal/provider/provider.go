@@ -179,6 +179,12 @@ func (p *MonadProvider) DataSources(ctx context.Context) []func() datasource.Dat
 	return []func() datasource.DataSource{
 		NewDataSourcePermissions,
 		NewDataSourceRole,
+		NewDataSourceInput,
+		NewDataSourceOutput,
+		NewDataSourceTransform,
+		NewDataSourceEnrichment,
+		NewDataSourcePipeline,
+		NewDataSourceSecret,
 	}
 }
 
