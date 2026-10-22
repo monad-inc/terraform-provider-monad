@@ -185,6 +185,12 @@ func (p *MonadProvider) DataSources(ctx context.Context) []func() datasource.Dat
 		NewDataSourceEnrichment,
 		NewDataSourcePipeline,
 		NewDataSourceSecret,
+		NewDataSourceInputType,
+		NewDataSourceOutputType,
+		NewDataSourceEnrichmentType,
+		NewDataSourceTransformType,
+		NewDataSourceAlertRuleType,
+		NewDataSourceCommunityTransform,
 	}
 }
 
