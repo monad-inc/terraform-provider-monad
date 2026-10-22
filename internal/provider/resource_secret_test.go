@@ -64,6 +64,8 @@ func secretValues(t *testing.T, typ tftypes.Type, value, valueHash tftypes.Value
 		"id":          tftypes.NewValue(tftypes.String, "secret-id"),
 		"name":        tftypes.NewValue(tftypes.String, "example"),
 		"description": tftypes.NewValue(tftypes.String, nil),
+		"created_at":  tftypes.NewValue(tftypes.String, nil),
+		"updated_at":  tftypes.NewValue(tftypes.String, nil),
 		"value":       value,
 		"value_hash":  valueHash,
 	})

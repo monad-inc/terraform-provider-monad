@@ -6,6 +6,15 @@ breaking changes are released as minor version bumps.
 
 ## Unreleased
 
+### Added
+
+- **Read-only `created_at`, `updated_at` and `managed_by` on every resource
+  (ENG-11406)** — the API's bookkeeping fields, populated on create, read and
+  import (`monad_secret` has no `managed_by`). `updated_at` shows as
+  `(known after apply)` whenever a resource has other changes, because every
+  write moves it; the other two keep their value. Existing state fills them in
+  on the next refresh without a diff.
+
 ### Fixed
 
 - **Documentation: the S3 examples on the `monad_input` and `monad_secret`
