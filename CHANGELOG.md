@@ -6,8 +6,23 @@ breaking changes are released as minor version bumps.
 
 ## Unreleased
 
+### Added
+
+- **`monad_organization` resource.** Manages a sub-organization of the
+  provider's organization: `name`, `friendly_name` and `description`, with
+  `slug`, `parent_organization_id` and `billing_account_id` computed.
+  `deletion_protection` defaults to `true` and refuses, at plan time, any plan
+  that would destroy or replace the sub-organization. Pair it with an aliased
+  provider whose `organization_id` is the sub-organization's `id` to manage
+  resources inside it.
+
 ### Fixed
 
+- **A provider whose configuration is unknown at plan time no longer fails.**
+  An aliased provider with `organization_id = monad_organization.x.id` (or any
+  other value known only after apply) failed with "Unable to find organization
+  ID". The provider now defers connecting until the values are known, so a
+  sub-organization and the resources inside it can be created in one apply.
 - **Documentation: the S3 examples on the `monad_input` and `monad_secret`
   pages now apply.** The inline-secret input example omitted `compression` and
   `partition_format`, and the secret-reference output example also omitted

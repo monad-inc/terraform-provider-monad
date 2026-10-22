@@ -211,6 +211,12 @@ func (r *ResourceEnrichment) Read(
 	req resource.ReadRequest,
 	resp *resource.ReadResponse,
 ) {
+	// No client: the provider configuration is still unknown (see
+	// MonadProvider.Configure). Keep the prior state until it is known.
+	if r.client == nil {
+		return
+	}
+
 	var data ResourceConnectorModel
 
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
