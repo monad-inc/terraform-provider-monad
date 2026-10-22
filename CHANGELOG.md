@@ -8,6 +8,16 @@ breaking changes are released as minor version bumps.
 
 ### Added
 
+- **`monad_role` resource and `monad_role` / `monad_permissions` data sources
+  (PRO-714).** `monad_role` manages a custom role, with permissions written as
+  slugs (`pipeline:read`) and resolved to the catalog's IDs; an unknown slug
+  fails at plan time with the valid list. At least one permission is required,
+  because the API cannot remove a role's last one. The built-in roles are
+  protected by the API, so `terraform import` refuses them; the `monad_role`
+  data source looks any role up by name instead, so `monad_api_key.role_id` no
+  longer needs a hard-coded UUID. `monad_permissions` lists the catalog.
+  These are the provider's first data sources.
+
 - **`monad_api_key` resource (PRO-713).** Create, rename, rotate, import and
   delete organization API keys. The token is returned by the API only at
   create and regenerate, so it is a sensitive attribute stored in state.
