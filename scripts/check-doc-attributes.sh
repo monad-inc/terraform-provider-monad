@@ -20,7 +20,8 @@ cd "$(dirname "$0")/.."
 # colon). resource_connector.go is shared by monad_input and monad_output.
 # data_source_lookup.go is not mapped: it declares the union of attributes for
 # six lookup data sources, each of which exposes a subset, so their pages are
-# checked by hand.
+# checked by hand. data_source_types.go is unmapped for the same reason (five
+# type data sources share it).
 # A plain list rather than an associative array: macOS ships bash 3.2.
 sources="
 internal/provider/provider.go:templates/index.md.tmpl
@@ -34,6 +35,7 @@ internal/provider/resource_api_key.go:templates/resources/api_key.md.tmpl
 internal/provider/resource_role.go:templates/resources/role.md.tmpl
 internal/provider/data_source_role.go:templates/data-sources/role.md.tmpl
 internal/provider/data_source_permissions.go:templates/data-sources/permissions.md.tmpl
+internal/provider/data_source_community_transform.go:templates/data-sources/community_transform.md.tmpl
 "
 
 total=0; missing=0

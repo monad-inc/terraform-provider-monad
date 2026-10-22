@@ -1,0 +1,47 @@
+---
+page_title: "monad_transform_type Data Source - monad"
+subcategory: ""
+description: |-
+  Describes the configuration schema of a transform operation.
+---
+
+# Data Source: monad_transform_type
+
+Describes a transform operation: the `arguments` an operation in `monad_transform.config.operations` takes. The schema comes from the Monad API, so it is always the one the API will validate against.
+
+## Example Usage
+
+```terraform
+data "monad_transform_type" "rename" {
+  operation = "rename_key"
+}
+
+output "rename_key_arguments" {
+  value = [for f in data.monad_transform_type.rename.arguments : "${f.path}${f.required ? " (required)" : ""}"]
+}
+```
+
+## Argument Reference
+
+* `operation` - (Required) The transform operation to describe, such as `add`. An unknown ID fails with an error; the API reports most unknown type IDs as a server error, so check the spelling first.
+
+## Attribute Reference
+
+* `name` - Display name.
+* `description` - Description.
+* `arguments` - List of the `arguments` fields, flattened and sorted by path. [See below](#field-elements).
+* `schema_json` - The full schema as the API returns it, JSON-encoded, for anything the lists do not express.
+
+### Field elements
+
+Each element of a field list has:
+
+* `path` - Dotted path. A nested field is `parent.child`. A `one_of` field's variants nest under the variant name (`metric_config.records.threshold`), matching how the configuration writes them, and its discriminator appears as `parent.<field>` with the variant names as `allowed_values`.
+* `name` - Display name.
+* `type` - Field type, such as `string`, `int`, `bool`, `array`, `object` or `one_of`.
+* `item_type` - Element type of an array field.
+* `required` - Whether the field must be set.
+* `immutable` - Whether the field cannot change after creation.
+* `default` - Default value, JSON-encoded (use `jsondecode`); null when there is none.
+* `description` - What the field does.
+* `allowed_values` - Allowed values for an enum field; empty otherwise.
