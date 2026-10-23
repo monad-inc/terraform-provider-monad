@@ -31,14 +31,14 @@ The following arguments are required:
 The following arguments are optional:
 
 * `description` - (Optional) Free-text description. Removing it clears the description on the server.
-* `email_domains` - (Optional) Email domains whose users sign in through this connection, such as `example.com`. Write each in lowercase, without `@` or a scheme, the form the API stores; other forms fail at plan time. Public email providers are rejected by the API. The API cannot change domains on an existing connection, so changing this replaces the connection.
+* `email_domains` - (Optional) Email domains whose users sign in through this connection, such as `example.com`. Write each in lowercase, without `@` or a scheme, the form the API stores; other forms fail at plan time. Public email providers are rejected by the API. The API cannot change domains on an existing connection, so a change fails the plan instead of replacing the connection, which would delete the users bound to it. Set the domains you need when you create the connection.
 * `public_name` - (Optional) Label shown to users in the SSO sign-in picker. When omitted, the API generates one (`sso-` followed by hex characters). It cannot be empty. Once set it can be changed but not cleared; removing it from configuration keeps the current value.
 * `session_timeout_minutes` - (Optional) Session length, in minutes, for sign-ins through this connection: 30 to 1440. When omitted, the platform default applies. Once set it can be changed but not cleared; removing it from configuration keeps the current value.
 * `timeouts` - (Optional) Operation timeouts for this resource. [See below](#timeouts).
 
 ### `saml` Block
 
-* `entity_id` - (Required) Service provider entity ID: a UUID that the IdP sends as the audience of its assertions. It must be unique across Monad. Changing it replaces the connection, and the IdP must then be updated to match. Use a fixed value or a `random_uuid` resource, which keeps its value when the connection is replaced for another reason.
+* `entity_id` - (Required) Service provider entity ID: a UUID that the IdP sends as the audience of its assertions. It must be unique across Monad. The API cannot change it on an existing connection, so a change fails the plan instead of replacing the connection. Use a fixed value or a `random_uuid` resource, which keeps its value for the life of the configuration.
 * `metadata_url` - (Required) HTTPS URL of the IdP's SAML metadata. Monad fetches and validates it when the connection is created and whenever it changes, so it must be reachable from the internet. It can be changed in place.
 
 ## Attribute Reference
@@ -53,10 +53,10 @@ This resource exports the following attributes in addition to the arguments abov
 |-----------|-----------|-------|
 | `name` | Input | |
 | `description` | Input | |
-| `email_domains` | Input | Changing it replaces the connection |
+| `email_domains` | Input | Set at create; a change fails the plan |
 | `public_name` | Input / Output | Generated when omitted; cannot be cleared |
 | `session_timeout_minutes` | Input / Output | Platform default when omitted; cannot be cleared |
-| `saml.entity_id` | Input | Changing it replaces the connection |
+| `saml.entity_id` | Input | Set at create; a change fails the plan |
 | `saml.metadata_url` | Input | Validated by the API on create and change |
 | `timeouts` | Input | Provider-side deadlines; never sent to the API |
 | `id` | Output | |

@@ -94,14 +94,18 @@ func TestSSOConnectionValidateConfig(t *testing.T) {
 	}
 }
 
-// TestSSOConnectionSchemaReplaceFields pins which fields force replacement:
-// the API cannot update them.
-func TestSSOConnectionSchemaReplaceFields(t *testing.T) {
+// TestSSOConnectionSchemaCreateOnlyFields pins how the create-only fields are
+// guarded: a change fails the plan rather than replacing the connection,
+// because deleting a connection cascades to the organization's users.
+func TestSSOConnectionSchemaCreateOnlyFields(t *testing.T) {
 	s := ssoSchema(t)
-	assert.Len(t, s.Attributes["email_domains"].(schema.SetAttribute).PlanModifiers, 1)
+	domains := s.Attributes["email_domains"].(schema.SetAttribute)
+	require.Len(t, domains.PlanModifiers, 1)
+	assert.IsType(t, immutableNoReplace{}, domains.PlanModifiers[0], "email_domains must not RequiresReplace")
 	saml := s.Attributes["saml"].(schema.SingleNestedAttribute)
 	entityID := saml.Attributes["entity_id"].(schema.StringAttribute)
-	assert.True(t, entityID.Required, "entity_id must be Required: a generated one would change on replacement")
-	assert.Len(t, entityID.PlanModifiers, 1)
+	assert.True(t, entityID.Required, "entity_id must be Required: a generated one would change on recreation")
+	require.Len(t, entityID.PlanModifiers, 1)
+	assert.IsType(t, immutableNoReplace{}, entityID.PlanModifiers[0], "entity_id must not RequiresReplace")
 	assert.Empty(t, saml.Attributes["metadata_url"].(schema.StringAttribute).PlanModifiers, "metadata_url updates in place")
 }

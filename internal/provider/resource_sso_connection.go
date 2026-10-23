@@ -15,7 +15,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -34,7 +33,9 @@ var _ resource.ResourceWithValidateConfig = &ResourceSSOConnection{}
 // API behaviors that shape it (api v0.281.1, pkg/routes/v3/routes/connections.go):
 //   - Only name, description, public_name, session_settings and
 //     saml.metadata_url can be updated. email_domains and saml.entity_id are
-//     set at create only (RequiresReplace).
+//     set at create only. A change to either fails the plan
+//     (immutableNoReplace) rather than replacing the connection: deleting a
+//     connection cascades to the organization's users, roles and sessions.
 //   - PATCH writes name and description unconditionally (an omitted one is
 //     blanked), so Update always sends both.
 //   - public_name and session_settings are COALESCEd on update: they can be
@@ -44,8 +45,8 @@ var _ resource.ResourceWithValidateConfig = &ResourceSSOConnection{}
 //     must already be in that form so plans stay clean.
 //   - No field is secret: the IdP's certificate comes from its metadata URL.
 //   - saml.entity_id is Required rather than generated: a generated one would
-//     change whenever the connection is replaced (e.g. for email_domains),
-//     silently breaking the IdP's audience setting.
+//     change if the connection were ever recreated, silently breaking the
+//     IdP's audience setting.
 type ResourceSSOConnection struct {
 	client *client.Client
 }
@@ -72,6 +73,11 @@ const (
 	ssoSessionTimeoutMinMin = 30
 	ssoSessionTimeoutMaxMin = 1440
 )
+
+// ssoNoReplaceReason explains why a create-only change is refused rather than
+// planned as a replacement.
+const ssoNoReplaceReason = "Recreating an SSO connection deletes every user role, auth provider and session bound to it, " +
+	"locking users out of the organization. The API cannot change this value in place, so restore the configured value to match the existing connection."
 
 var ssoHostnameRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$`)
 
@@ -130,10 +136,10 @@ func (r *ResourceSSOConnection) Schema(ctx context.Context, req resource.SchemaR
 				Optional:            true,
 			},
 			"email_domains": schema.SetAttribute{
-				MarkdownDescription: "Email domains whose users are sent to this connection at sign-in, in lowercase without `@`. Set at create only; changing it replaces the connection.",
+				MarkdownDescription: "Email domains whose users are sent to this connection at sign-in, in lowercase without `@`. Set at create only; the API cannot update it, so a change on an existing connection fails the plan.",
 				ElementType:         types.StringType,
 				Optional:            true,
-				PlanModifiers:       []planmodifier.Set{setplanmodifier.RequiresReplace()},
+				PlanModifiers:       []planmodifier.Set{immutableNoReplace{reason: ssoNoReplaceReason}},
 			},
 			"public_name": schema.StringAttribute{
 				MarkdownDescription: "Label shown to users in the SSO sign-in picker. The API generates one (`sso-<hex>`) when omitted. Can be changed but not cleared.",
@@ -152,9 +158,9 @@ func (r *ResourceSSOConnection) Schema(ctx context.Context, req resource.SchemaR
 				Required:            true,
 				Attributes: map[string]schema.Attribute{
 					"entity_id": schema.StringAttribute{
-						MarkdownDescription: "Service provider entity ID (a UUID) that the identity provider sends as the assertion audience. Unique across Monad; changing it replaces the connection.",
+						MarkdownDescription: "Service provider entity ID (a UUID) that the identity provider sends as the assertion audience. Unique across Monad. Set at create only; a change on an existing connection fails the plan.",
 						Required:            true,
-						PlanModifiers:       []planmodifier.String{stringplanmodifier.RequiresReplace()},
+						PlanModifiers:       []planmodifier.String{immutableNoReplace{reason: ssoNoReplaceReason}},
 					},
 					"metadata_url": schema.StringAttribute{
 						MarkdownDescription: "HTTPS URL of the identity provider's SAML metadata. Monad fetches and validates it on create and on change.",

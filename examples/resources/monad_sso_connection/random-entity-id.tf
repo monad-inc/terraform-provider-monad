@@ -1,6 +1,5 @@
-# random_uuid keeps the same value for the life of the resource, including
-# when the connection is replaced, so the identity provider's audience
-# setting never has to change.
+# random_uuid keeps the same value for the life of the configuration, so the
+# identity provider's audience setting never has to change.
 resource "random_uuid" "sso_entity_id" {}
 
 resource "monad_sso_connection" "okta" {
