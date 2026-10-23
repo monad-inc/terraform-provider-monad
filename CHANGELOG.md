@@ -16,6 +16,8 @@ breaking changes are released as minor version bumps.
   change to either on an existing connection fails the plan. The provider
   never replaces a connection, because deleting one deletes the users, roles
   and sessions bound to it.
+  The resource page recommends `lifecycle { prevent_destroy = true }` to
+  guard against `terraform destroy` and removal from configuration.
 
 ### Fixed
 

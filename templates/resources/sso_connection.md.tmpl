@@ -21,6 +21,14 @@ Users whose email address is in one of the connection's `email_domains` are sent
 
 {{ tffile "examples/resources/monad_sso_connection/random-entity-id.tf" }}
 
+### Protect the connection from deletion
+
+~> **Warning:** Deleting an SSO connection also deletes every user role, auth provider and session bound to it, which locks those users out of the organization. We recommend setting `prevent_destroy` on every `monad_sso_connection`.
+
+The provider never replaces a connection: a change to `email_domains` or `saml.entity_id` fails the plan instead. `prevent_destroy` covers the remaining paths to a delete, `terraform destroy` and removing the resource from configuration, by making Terraform refuse the plan. To delete a connection on purpose, remove the `lifecycle` block first.
+
+{{ tffile "examples/resources/monad_sso_connection/prevent-destroy.tf" }}
+
 ## Argument Reference
 
 The following arguments are required:
