@@ -28,6 +28,7 @@ internal/provider/resource_enrichment.go:templates/resources/enrichment.md.tmpl
 internal/provider/resource_transform.go:templates/resources/transform.md.tmpl
 internal/provider/resource_pipeline.go:templates/resources/pipeline.md.tmpl
 internal/provider/resource_secret.go:templates/resources/secret.md.tmpl
+internal/provider/resource_sso_connection.go:templates/resources/sso_connection.md.tmpl
 internal/provider/resource_alert_rule.go:templates/resources/alert_rule.md.tmpl
 internal/provider/computed_meta.go:templates/resources/input.md.tmpl templates/resources/output.md.tmpl templates/resources/enrichment.md.tmpl templates/resources/transform.md.tmpl templates/resources/pipeline.md.tmpl templates/resources/alert_rule.md.tmpl
 "
