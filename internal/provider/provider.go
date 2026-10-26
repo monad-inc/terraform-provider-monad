@@ -179,6 +179,7 @@ func (p *MonadProvider) Resources(ctx context.Context) []func() resource.Resourc
 		NewResourceOutput,
 		NewResourceTransform,
 		NewResourceSecret,
+		NewResourceSSOConnection,
 		NewResourcePipeline,
 		NewResourceEnrichment,
 		NewResourceAlertRule,

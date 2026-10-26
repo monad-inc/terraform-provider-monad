@@ -27,6 +27,7 @@ internal/provider/resource_transform.go:templates/resources/transform.md.tmpl
 internal/provider/resource_pipeline.go:templates/resources/pipeline.md.tmpl
 internal/provider/resource_secret.go:templates/resources/secret.md.tmpl
 internal/provider/resource_organization.go:templates/resources/organization.md.tmpl
+internal/provider/resource_sso_connection.go:templates/resources/sso_connection.md.tmpl
 internal/provider/resource_alert_rule.go:templates/resources/alert_rule.md.tmpl
 "
 
