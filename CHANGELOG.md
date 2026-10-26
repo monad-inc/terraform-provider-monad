@@ -16,6 +16,16 @@ breaking changes are released as minor version bumps.
   the Storage Costs view then shows the type as priced at `0` rather than
   unpriced (`----`). Per-output rates are deleted. Prices are checked against the API's 0–1000 range at plan
   time.
+- **`monad_sso_connection` resource.** Manages a SAML SSO connection: `name`,
+  `description`, `email_domains`, `public_name`, `session_timeout_minutes`
+  and a `saml` block (`entity_id`, `metadata_url`). The connection holds no
+  secrets; Monad reads the IdP certificate from the metadata URL.
+  `email_domains` and `saml.entity_id` cannot be changed by the API, so a
+  change to either on an existing connection fails the plan. The provider
+  never replaces a connection, because deleting one deletes the users, roles
+  and sessions bound to it.
+  The resource page recommends `lifecycle { prevent_destroy = true }` to
+  guard against `terraform destroy` and removal from configuration.
 
 ### Fixed
 
