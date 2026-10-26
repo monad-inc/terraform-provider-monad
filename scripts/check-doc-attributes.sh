@@ -19,7 +19,8 @@ cd "$(dirname "$0")/.."
 # schema source file -> templates that document it (space-separated after the
 # colon). resource_connector.go is shared by monad_input and monad_output.
 # computed_meta.go declares created_at/updated_at/managed_by for every resource;
-# monad_secret has no managed_by, so its page is checked by hand.
+# monad_secret and monad_sso_connection have no managed_by, so their pages are
+# checked by hand.
 # A plain list rather than an associative array: macOS ships bash 3.2.
 sources="
 internal/provider/provider.go:templates/index.md.tmpl
