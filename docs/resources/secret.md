@@ -79,6 +79,8 @@ The following arguments are optional:
 This resource exports the following attributes in addition to the arguments above:
 
 * `id` - UUID of the secret. This is what components reference: `{ id = monad_secret.example.id }`.
+* `created_at` - When the object was created, as an RFC 3339 timestamp set by the API.
+* `updated_at` - When the object was last changed. Shown as `(known after apply)` whenever the resource has other changes, because every write moves it.
 * `value_hash` - HMAC fingerprint of `value`, maintained by the provider. A changed `value` marks this `(known after apply)` and the apply re-sends the value; an unchanged value leaves it stable.
 
 ### Inputs and outputs
@@ -90,6 +92,8 @@ This resource exports the following attributes in addition to the arguments abov
 | `value` | Input (write-only) | Never stored in state, never returned by the API |
 | `value_hash` | Output | Provider-computed rotation fingerprint |
 | `timeouts` | Input | Provider-side deadlines; never sent to the API |
+| `created_at` | Output | Set by the API |
+| `updated_at` | Output | Changes on every write |
 | `id` | Output | |
 
 ## Timeouts

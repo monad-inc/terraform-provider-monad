@@ -51,6 +51,22 @@ func TestAlertRuleActiveOptionalComputed(t *testing.T) {
 	assert.True(t, ba.Computed, "active must be Computed (server default)")
 }
 
+// TestAlertRuleInvertSelectionOptionalComputed pins `invert_selection` to the
+// same shape as `active`. Before ENG-11404 the attribute did not exist, so the
+// full-replace update reset a UI-set exclude-list to an include-list.
+func TestAlertRuleInvertSelectionOptionalComputed(t *testing.T) {
+	s := alertRuleSchema(t)
+
+	attr, ok := s.Attributes["invert_selection"]
+	require.True(t, ok, "invert_selection attribute missing")
+
+	ba, ok := attr.(schema.BoolAttribute)
+	require.True(t, ok, "invert_selection is not a BoolAttribute")
+	assert.True(t, ba.Optional, "invert_selection must be Optional")
+	assert.True(t, ba.Computed, "invert_selection must be Computed (server default)")
+	assert.NotNil(t, ba.Default, "invert_selection must default to false")
+}
+
 // TestAlertRuleSeverityRequired pins `severity` to Required: the API rejects a
 // create with no severity ("alert rule severity is required"), so the provider
 // must surface that at plan time rather than as a 400 at apply (ENG-9549).

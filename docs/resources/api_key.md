@@ -49,14 +49,22 @@ output "ci_sender_token" {
 # in place: the id stays the same, `token` changes, and the previous token stops
 # working as soon as the apply finishes. Update whatever consumes the token in
 # the same apply.
+#
+# time_rotating (hashicorp/time) moves its timestamp every 30 days, so each
+# apply after that point rotates the key. The new expiration is only known at
+# apply time; the plan shows `token` as known after apply.
 data "monad_role" "reader" {
   name = "Reader"
+}
+
+resource "time_rotating" "api_key" {
+  rotation_days = 30
 }
 
 resource "monad_api_key" "rotated" {
   name            = "nightly-export"
   role_id         = data.monad_role.reader.id
-  expiration_time = timeadd(var.rotation_epoch, "2160h") # 90 days after the last rotation
+  expiration_time = timeadd(time_rotating.api_key.rfc3339, "1440h") # 60 days: a 30-day overlap
 }
 ```
 
@@ -79,6 +87,8 @@ This resource exports the following attributes in addition to the arguments abov
 
 * `id` - UUID of the key.
 * `token` - (Sensitive) The token to send in the `x-api-key` header. Stored in state. `(known after apply)` whenever the key is created, replaced or regenerated. Null after `terraform import`, because the API does not return it; change `expiration_time` to regenerate the key and obtain one.
+* `created_at` - When the key was created, as an RFC 3339 timestamp set by the API.
+* `updated_at` - When the key was last changed, including when it was regenerated. Shown as `(known after apply)` whenever the resource has other changes, because every write moves it.
 
 ### Inputs and outputs
 
@@ -91,6 +101,8 @@ This resource exports the following attributes in addition to the arguments abov
 | `token` | Output (sensitive) | Stored in state; returned only by create and regenerate |
 | `timeouts` | Input | Provider-side deadlines; never sent to the API |
 | `id` | Output | |
+| `created_at` | Output | Set by the API |
+| `updated_at` | Output | Changes on every write |
 
 ## Timeouts
 
