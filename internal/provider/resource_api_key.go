@@ -39,6 +39,8 @@ type ResourceAPIKey struct {
 
 type ResourceAPIKeyModel struct {
 	Timeouts       timeouts.Value `tfsdk:"timeouts"`
+	CreatedAt      types.String   `tfsdk:"created_at"`
+	UpdatedAt      types.String   `tfsdk:"updated_at"`
 	ID             types.String   `tfsdk:"id"`
 	Name           types.String   `tfsdk:"name"`
 	Description    types.String   `tfsdk:"description"`
@@ -138,6 +140,8 @@ func (r *ResourceAPIKey) Schema(
 			},
 		},
 	}
+	// The API key model has created_at and updated_at but no managed_by.
+	withComputedMeta(resp.Schema.Attributes, false)
 }
 
 // ValidateConfig checks that expiration_time parses. Whether it is in the
@@ -273,6 +277,8 @@ func (r *ResourceAPIKey) Create(
 
 	if err == nil {
 		data.Token = types.StringValue(key.GetToken())
+		data.CreatedAt = metaString(key.GetCreatedAt())
+		data.UpdatedAt = metaString(key.GetUpdatedAt())
 		tflog.Trace(ctx, "created an API key resource")
 		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 		return
@@ -282,9 +288,11 @@ func (r *ResourceAPIKey) Create(
 	// that never arrived, and the API will not return it again. Nobody holds
 	// that token, so regenerating (keeping the expiration) is safe and is the
 	// only way to give state a usable one.
-	token, regenErr := r.regenerate(parentCtx, createdID, nil)
+	regenerated, regenErr := r.regenerate(parentCtx, createdID, nil)
 	if regenErr != nil {
 		data.Token = types.StringNull()
+		data.CreatedAt = types.StringNull()
+		data.UpdatedAt = types.StringNull()
 		resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 		resp.Diagnostics.AddError(
 			"API key adopted without a token",
@@ -296,7 +304,9 @@ func (r *ResourceAPIKey) Create(
 		)
 		return
 	}
-	data.Token = types.StringValue(token)
+	data.Token = types.StringValue(regenerated.GetToken())
+	data.CreatedAt = metaString(regenerated.GetCreatedAt())
+	data.UpdatedAt = metaString(regenerated.GetUpdatedAt())
 	resp.Diagnostics.AddWarning(
 		"API key regenerated after adoption",
 		fmt.Sprintf(
@@ -350,6 +360,8 @@ func (r *ResourceAPIKey) Read(
 	data.Description = reconcileOptionalString(data.Description, key.GetDescription())
 	data.RoleID = types.StringValue(key.GetRoleId())
 	data.ExpirationTime = reconcileTimestamp(data.ExpirationTime, key.GetExpirationTime())
+	data.CreatedAt = metaString(key.GetCreatedAt())
+	data.UpdatedAt = metaString(key.GetUpdatedAt())
 	// The token is never returned by GET; keep whatever state holds (null after
 	// import).
 
@@ -375,6 +387,11 @@ func (r *ResourceAPIKey) Update(
 		return
 	}
 
+	// updated_at is planned unknown on any change; it keeps the state value
+	// unless a request below writes the key.
+	plan.CreatedAt = state.CreatedAt
+	plan.UpdatedAt = state.UpdatedAt
+
 	if !plan.Name.Equal(state.Name) || !plan.Description.Equal(state.Description) {
 		// The API treats an omitted field as "keep", so a description removed
 		// from the configuration is sent as "" to clear it.
@@ -383,7 +400,7 @@ func (r *ResourceAPIKey) Update(
 			Name:        plan.Name.ValueStringPointer(),
 			Description: &description,
 		}
-		_, monadResp, err := r.client.OrganizationAPIKeysAPI.
+		updated, monadResp, err := r.client.OrganizationAPIKeysAPI.
 			UpdateAPIKey(ctx, r.client.OrganizationID, plan.ID.ValueString()).
 			UpdateAPIKeyRequest(monad.RoutesV2UpdateAPIKeyRequestAsUpdateAPIKeyRequest(&request)).
 			Execute()
@@ -394,6 +411,8 @@ func (r *ResourceAPIKey) Update(
 			)
 			return
 		}
+		plan.CreatedAt = metaString(updated.GetCreatedAt())
+		plan.UpdatedAt = metaString(updated.GetUpdatedAt())
 	}
 
 	if sameInstant(state.ExpirationTime, plan.ExpirationTime) {
@@ -402,12 +421,14 @@ func (r *ResourceAPIKey) Update(
 		plan.Token = state.Token
 	} else {
 		expiration := plan.ExpirationTime.ValueString()
-		token, err := r.regenerate(ctx, plan.ID.ValueString(), &expiration)
+		regenerated, err := r.regenerate(ctx, plan.ID.ValueString(), &expiration)
 		if err != nil {
 			resp.Diagnostics.AddError("Unable to regenerate API key", err.Error())
 			return
 		}
-		plan.Token = types.StringValue(token)
+		plan.Token = types.StringValue(regenerated.GetToken())
+		plan.CreatedAt = metaString(regenerated.GetCreatedAt())
+		plan.UpdatedAt = metaString(regenerated.GetUpdatedAt())
 	}
 
 	tflog.Trace(ctx, "updated an API key resource")
@@ -457,18 +478,18 @@ func (r *ResourceAPIKey) ImportState(
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
 }
 
-// regenerate rotates the key's secret and returns the new token. A nil
-// expiration keeps the key's current one.
-func (r *ResourceAPIKey) regenerate(ctx context.Context, id string, expiration *string) (string, error) {
+// regenerate rotates the key's secret and returns the regenerated key, which
+// carries the new token. A nil expiration keeps the key's current one.
+func (r *ResourceAPIKey) regenerate(ctx context.Context, id string, expiration *string) (*monad.ModelsAPIKeyWithToken, error) {
 	request := monad.RoutesV2RegenerateAPIKeyRequest{ExpirationTime: expiration}
 	key, monadResp, err := r.client.OrganizationAPIKeysAPI.
 		RegenerateAPIKey(ctx, r.client.OrganizationID, id).
 		RegenerateAPIKeyRequest(monad.RoutesV2RegenerateAPIKeyRequestAsRegenerateAPIKeyRequest(&request)).
 		Execute()
 	if err != nil {
-		return "", fmt.Errorf("%s. Response: %s", err, getResponseBody(monadResp))
+		return nil, fmt.Errorf("%s. Response: %s", err, getResponseBody(monadResp))
 	}
-	return key.GetToken(), nil
+	return key, nil
 }
 
 // listForAdopt is the adoptLister for API keys.

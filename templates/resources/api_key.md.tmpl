@@ -44,6 +44,8 @@ This resource exports the following attributes in addition to the arguments abov
 
 * `id` - UUID of the key.
 * `token` - (Sensitive) The token to send in the `x-api-key` header. Stored in state. `(known after apply)` whenever the key is created, replaced or regenerated. Null after `terraform import`, because the API does not return it; change `expiration_time` to regenerate the key and obtain one.
+* `created_at` - When the key was created, as an RFC 3339 timestamp set by the API.
+* `updated_at` - When the key was last changed, including when it was regenerated. Shown as `(known after apply)` whenever the resource has other changes, because every write moves it.
 
 ### Inputs and outputs
 
@@ -56,6 +58,8 @@ This resource exports the following attributes in addition to the arguments abov
 | `token` | Output (sensitive) | Stored in state; returned only by create and regenerate |
 | `timeouts` | Input | Provider-side deadlines; never sent to the API |
 | `id` | Output | |
+| `created_at` | Output | Set by the API |
+| `updated_at` | Output | Changes on every write |
 
 ## Timeouts
 
