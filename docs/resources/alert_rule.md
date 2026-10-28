@@ -2,7 +2,7 @@
 page_title: "monad_alert_rule Resource - monad"
 subcategory: ""
 description: |-
-  Manages an alert rule: a condition evaluated against pipeline metrics, status, logs or billing that raises an alert when it is met.
+  Manages an alert rule: a condition evaluated against pipeline metrics, status or logs that raises an alert when it is met.
 ---
 
 # Resource: monad_alert_rule
@@ -138,29 +138,12 @@ resource "monad_alert_rule" "schema_mismatch_logged" {
 }
 ```
 
-### Organization spend
-
-```terraform
-# Organization-level alert types take no pipeline_ids.
-resource "monad_alert_rule" "budget" {
-  name     = "Monthly spend above $5,000"
-  type     = "billing-metrics-cost-budget"
-  severity = "high"
-
-  rule_config = {
-    settings = {
-      usd_amount = 5000
-    }
-  }
-}
-```
-
 ## Argument Reference
 
 The following arguments are required:
 
 * `name` - (Required) Display name of the rule. Carried on every alert it raises.
-* `type` - (Required, Forces new resource) The alert type. One of `threshold-alert`, `error-rate-alert`, `pipeline-status-alert`, `volume-anomaly-alert`, `monad-log-alert`, `billing-metrics-cost-budget`. Immutable on the API, so changing it destroys and recreates the rule. (`schema-detection-alert` rules are created by the platform from `schema_detection_spec` on pipeline edges and cannot be declared here.)
+* `type` - (Required, Forces new resource) The alert type. One of `threshold-alert`, `error-rate-alert`, `pipeline-status-alert`, `volume-anomaly-alert`, `monad-log-alert`. Immutable on the API, so changing it destroys and recreates the rule. (`schema-detection-alert` rules are created by the platform from `schema_detection_spec` on pipeline edges and cannot be declared here. `billing-metrics-cost-budget` rules cannot be created by the provider either; see [`billing-metrics-cost-budget`](#billing-metrics-cost-budget).)
 * `severity` - (Required) One of `critical`, `high`, `medium`, `low`, `info`.
 * `rule_config` - (Required) Type-specific configuration. [See below](#rule_config-argument).
 
@@ -168,7 +151,8 @@ The following arguments are optional:
 
 * `description` - (Optional) Free-text description.
 * `active` - (Optional) Whether the rule is evaluated. Defaults to `true`; an inactive rule keeps its configuration but never fires.
-* `pipeline_ids` - (Optional) Set of pipeline IDs the rule watches, usually `monad_pipeline.x.id`. Omitted or empty, a pipeline-scoped rule watches **every** pipeline in the organization. Organization-level types (`billing-metrics-cost-budget`) ignore it.
+* `pipeline_ids` - (Optional) Set of pipeline IDs the rule watches, usually `monad_pipeline.x.id`. Omitted or empty, a pipeline-scoped rule watches **every** pipeline in the organization.
+* `invert_selection` - (Optional) Read `pipeline_ids` as an exclude-list: the rule watches every pipeline **except** those listed. Defaults to `false`. Empty `pipeline_ids` still means every pipeline either way. Only pipeline-scoped rule types consult it.
 * `timeouts` - (Optional) Operation timeouts for this resource. [See below](#timeouts).
 
 ### `rule_config` Argument
@@ -220,11 +204,9 @@ Fires in real time when a pipeline log event matches every configured filter. At
 
 #### `billing-metrics-cost-budget`
 
-Fires when the organization's current invoice exceeds a budget. Organization-level: `pipeline_ids` does not apply. See [Billing Metrics Cost Budget Alert](https://app.monad.com/docs/alerts/billing-metrics-cost-budget).
+Fires when the organization's current invoice exceeds a budget. See [Billing Metrics Cost Budget Alert](https://app.monad.com/docs/alerts/billing-metrics-cost-budget).
 
-* `usd_amount` - (Required) Budget threshold in USD, greater than `0`.
-
-The API injects a `billing_account_id` into this type's stored settings; the provider masks it, so it never shows as drift.
+~> **The provider cannot create this type.** A billing account can span several Monad organizations, but an API key is scoped to a single organization, so the Monad API does not accept billing operations from API keys. The provider authenticates with an API key, so it rejects `type = "billing-metrics-cost-budget"` when the configuration is validated, before anything is sent to the API (`terraform validate` and `terraform plan` both report it). Create billing alert rules in the Monad UI and leave them out of your Terraform configuration.
 
 ## Attribute Reference
 
@@ -245,6 +227,7 @@ This resource exports the following attributes in addition to the arguments abov
 | `severity` | Input | |
 | `active` | Input and output | Optional; defaults to `true` and adopts the server value on import |
 | `pipeline_ids` | Input | Set; omitted and empty are equivalent |
+| `invert_selection` | Input and output | Optional; defaults to `false` and is refreshed on read, so a UI change shows as drift |
 | `rule_config` | Input | Refreshed from the API on read; compared semantically, server-injected keys masked |
 | `timeouts` | Input | Provider-side deadlines; never sent to the API |
 | `created_at` | Output | Set by the API |
