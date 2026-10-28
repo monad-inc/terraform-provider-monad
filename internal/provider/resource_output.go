@@ -135,6 +135,10 @@ func (r *ResourceOutput) Create(
 		resp.Diagnostics.AddError("Failed to fingerprint output secrets", err.Error())
 		return
 	}
+	resp.Diagnostics.Append(writeInlineSlots(ctx, resp.Private, secrets)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	tflog.Trace(ctx, "created a output resource")
 
@@ -231,11 +235,17 @@ func (r *ResourceOutput) Update(
 		return
 	}
 
+	owned, diags := readInlineSlots(ctx, req.Private)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	// Re-sending an inline secret under its existing name would 409; reuse the
 	// secret this output already references instead (ENG-11264). The configured
 	// secrets are still what gets hashed.
 	sendSecrets, secretUpdates, diags := secretsForUpdate(ctx, r.client, "output", data.ID.ValueString(), secrets,
-		connectorSecretsChanged(&data),
+		connectorSecretsChanged(&data), owned,
 		func(ctx context.Context) (map[string]any, *http.Response, error) {
 			current, httpResp, err := r.client.OrganizationOutputsAPI.
 				GetOrganizationOutput(ctx, r.client.OrganizationID, data.ID.ValueString()).
@@ -296,6 +306,10 @@ func (r *ResourceOutput) Update(
 	// (nulled) and secrets_hash is refreshed to match what was just sent.
 	if err := finalizeConnectorSecrets(ctx, r.client.OrganizationID, &data, secrets); err != nil {
 		resp.Diagnostics.AddError("Failed to fingerprint output secrets", err.Error())
+		return
+	}
+	resp.Diagnostics.Append(writeInlineSlots(ctx, resp.Private, secrets)...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 

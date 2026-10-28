@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -29,6 +30,9 @@ type storedSecretsFunc func(ctx context.Context) (map[string]any, *http.Response
 // inline secret is sent as a reference to the secret its slot already holds
 // and is never written: re-sending its value on an unrelated change would undo
 // a rotation made outside Terraform.
+//
+// owned is the set of slots the last apply sent inline (see inlineSlots); nil
+// when there is no record.
 func secretsForUpdate(
 	ctx context.Context,
 	c *client.Client,
@@ -36,6 +40,7 @@ func secretsForUpdate(
 	selfID string,
 	configured map[string]any,
 	secretsChanged bool,
+	owned inlineSlots,
 	readStored storedSecretsFunc,
 ) (map[string]any, []inPlaceSecretUpdate, diag.Diagnostics) {
 	if !hasInlineSecrets(configured) {
@@ -54,7 +59,7 @@ func secretsForUpdate(
 	if !secretsChanged {
 		return referenceStoredSecrets(configured, stored), nil, nil
 	}
-	return reuseInlineSecretsInPlace(ctx, c, configured, stored, selfID)
+	return reuseInlineSecretsInPlace(ctx, c, kind, configured, stored, selfID, owned)
 }
 
 // referenceStoredSecrets sends each inline secret as a reference to the secret
@@ -94,6 +99,13 @@ func referenceStoredSecrets(configured, stored map[string]any) map[string]any {
 // a new secret and a name owned by an unrelated secret still gets the API's
 // 409 rather than being overwritten.
 //
+// A matching name alone does not prove the secret belongs to this component:
+// a slot that referenced a separately managed secret by { id } and is switched
+// to an inline secret of the same name would overwrite it. So the update is
+// refused unless owned (the slots the last apply sent inline) lists the slot.
+// With no record — after an import, or state written by an older provider —
+// the update is allowed only when no other component uses the secret.
+//
 // configured is never modified; the caller hashes it for rotation detection.
 // stored is the component's current config.secrets as the API returns it
 // (slot → { id }, or one level of nested slots). selfID is the component's
@@ -101,27 +113,36 @@ func referenceStoredSecrets(configured, stored map[string]any) map[string]any {
 func reuseInlineSecretsInPlace(
 	ctx context.Context,
 	c *client.Client,
+	kind string,
 	configured, stored map[string]any,
 	selfID string,
+	owned inlineSlots,
 ) (map[string]any, []inPlaceSecretUpdate, diag.Diagnostics) {
-	var diags diag.Diagnostics
-	var updates []inPlaceSecretUpdate
-	out := reuseInlineSecretsAt(ctx, c, configured, stored, selfID, path.Root("config").AtName("secrets"), &updates, &diags)
-	return out, updates, diags
+	r := secretReuse{c: c, kind: kind, selfID: selfID, owned: owned}
+	out := r.at(ctx, configured, stored, path.Root("config").AtName("secrets"), nil)
+	return out, r.updates, r.diags
 }
 
-func reuseInlineSecretsAt(
+// secretReuse carries one reuseInlineSecretsInPlace walk.
+type secretReuse struct {
+	c       *client.Client
+	kind    string
+	selfID  string
+	owned   inlineSlots
+	updates []inPlaceSecretUpdate
+	diags   diag.Diagnostics
+}
+
+func (r *secretReuse) at(
 	ctx context.Context,
-	c *client.Client,
 	configured, stored map[string]any,
-	selfID string,
 	at path.Path,
-	updates *[]inPlaceSecretUpdate,
-	diags *diag.Diagnostics,
+	keys []string,
 ) map[string]any {
 	out := make(map[string]any, len(configured))
 	for key, value := range configured {
 		slotPath := at.AtMapKey(key)
+		slot := append(append([]string(nil), keys...), key)
 		storedValue, _ := stored[key]
 
 		if secret, ok := inlineSecret(value); ok {
@@ -130,9 +151,9 @@ func reuseInlineSecretsAt(
 			if storedID == "" {
 				continue
 			}
-			if update, reused := matchReferencedSecret(ctx, c, secret, storedID, selfID, slotPath, diags); reused {
+			if update, reused := r.match(ctx, secret, storedID, slotPath, slot); reused {
 				out[key] = map[string]any{"id": storedID}
-				*updates = append(*updates, update)
+				r.updates = append(r.updates, update)
 			}
 			continue
 		}
@@ -140,7 +161,7 @@ func reuseInlineSecretsAt(
 		// One level of nested slots (a map of secrets), as the API allows.
 		if nested, ok := value.(map[string]any); ok && !isSecretRef(nested) {
 			storedNested, _ := storedValue.(map[string]any)
-			out[key] = reuseInlineSecretsAt(ctx, c, nested, storedNested, selfID, slotPath, updates, diags)
+			out[key] = r.at(ctx, nested, storedNested, slotPath, slot)
 			continue
 		}
 
@@ -159,17 +180,18 @@ type inPlaceSecretUpdate struct {
 	others []string
 }
 
-// matchReferencedSecret reads the secret the slot already references and,
-// when its name matches the configured inline secret, returns the update that
-// reuses it in place and reports that the slot can be sent as a reference.
-func matchReferencedSecret(
+// match reads the secret the slot already references and, when its name
+// matches the configured inline secret and this component may update it,
+// returns the update that reuses it in place and reports that the slot can be
+// sent as a reference.
+func (r *secretReuse) match(
 	ctx context.Context,
-	c *client.Client,
 	want inlineSecretValue,
-	storedID, selfID string,
+	storedID string,
 	slotPath path.Path,
-	diags *diag.Diagnostics,
+	slot []string,
 ) (inPlaceSecretUpdate, bool) {
+	c := r.c
 	current, httpResp, err := c.SecretsAPI.GetSecret(ctx, c.OrganizationID, storedID).Execute()
 	if err != nil {
 		body := getResponseBody(httpResp)
@@ -177,7 +199,7 @@ func matchReferencedSecret(
 			// The referenced secret is gone; let the API create the inline one.
 			return inPlaceSecretUpdate{}, false
 		}
-		diags.AddAttributeError(slotPath, "Client Error", fmt.Sprintf(
+		r.diags.AddAttributeError(slotPath, "Client Error", fmt.Sprintf(
 			"Unable to read secret %s currently referenced by this slot, got error: %s. Response: %s",
 			storedID, err, body,
 		))
@@ -189,11 +211,32 @@ func matchReferencedSecret(
 		return inPlaceSecretUpdate{}, false
 	}
 
+	others := otherSecretUsers(current, r.selfID)
+	switch {
+	case r.owned != nil && !r.owned.has(slot):
+		r.diags.AddAttributeError(slotPath, "Secret not owned by this "+r.kind, fmt.Sprintf(
+			"This slot referenced secret %q (%s) by id when last applied, so it is not an inline secret "+
+				"this %s created, and the provider will not overwrite it. Keep the { id } reference and change "+
+				"the secret where it is managed, or give the inline secret a new name.",
+			want.name, storedID, r.kind,
+		))
+		return inPlaceSecretUpdate{}, false
+	case r.owned == nil && len(others) > 0:
+		r.diags.AddAttributeError(slotPath, "Shared secret not updated", fmt.Sprintf(
+			"Secret %q (%s) is also used by %s, and the provider has no record of whether this %s created it "+
+				"(it was imported, or last applied by an older provider version), so it will not update it in "+
+				"place. Reference it as { id = %q } and change it where it is managed, or give the inline "+
+				"secret a new name.",
+			want.name, storedID, strings.Join(others, ", "), r.kind, storedID,
+		))
+		return inPlaceSecretUpdate{}, false
+	}
+
 	return inPlaceSecretUpdate{
 		slotPath: slotPath,
 		id:       storedID,
 		want:     want,
-		others:   otherSecretUsers(current, selfID),
+		others:   others,
 	}, true
 }
 
@@ -303,4 +346,98 @@ func otherSecretUsers(s *monad.RoutesV2SecretWithComponentsResponse, selfID stri
 	add("enrichment", s.Enrichments)
 	sort.Strings(users)
 	return users
+}
+
+// inlineSecretSlotsKey is the private-state key under which a connector
+// records the slots its last create or update sent inline.
+const inlineSecretSlotsKey = "inline_secret_slots"
+
+// inlineSlots is the set of secret slots (each a path of map keys under
+// config.secrets) a connector last sent inline. It is kept in private state
+// because `secrets` is write-only, so state cannot say whether a slot held an
+// inline secret or an { id } reference. nil means there is no record.
+type inlineSlots map[string]struct{}
+
+func slotKey(slot []string) string {
+	b, _ := json.Marshal(slot)
+	return string(b)
+}
+
+func (s inlineSlots) has(slot []string) bool {
+	_, ok := s[slotKey(slot)]
+	return ok
+}
+
+// collectInlineSlots returns the slots of secrets that hold an inline secret.
+// It is never nil, so an empty record still counts as a record.
+func collectInlineSlots(secrets map[string]any) inlineSlots {
+	slots := inlineSlots{}
+	var walk func(m map[string]any, keys []string)
+	walk = func(m map[string]any, keys []string) {
+		for key, value := range m {
+			slot := append(append([]string(nil), keys...), key)
+			if _, ok := inlineSecret(value); ok {
+				slots[slotKey(slot)] = struct{}{}
+				continue
+			}
+			if nested, ok := value.(map[string]any); ok && !isSecretRef(nested) {
+				walk(nested, slot)
+			}
+		}
+	}
+	walk(secrets, nil)
+	return slots
+}
+
+// privateGetter and privateSetter are the parts of the framework's private
+// state data the connectors use.
+type privateGetter interface {
+	GetKey(ctx context.Context, key string) ([]byte, diag.Diagnostics)
+}
+
+type privateSetter interface {
+	SetKey(ctx context.Context, key string, value []byte) diag.Diagnostics
+}
+
+// readInlineSlots returns the recorded inline slots, or nil when there is no
+// record (after an import, or state written by an older provider version).
+func readInlineSlots(ctx context.Context, p privateGetter) (inlineSlots, diag.Diagnostics) {
+	b, diags := p.GetKey(ctx, inlineSecretSlotsKey)
+	if diags.HasError() || b == nil {
+		return nil, diags
+	}
+	var list [][]string
+	if err := json.Unmarshal(b, &list); err != nil {
+		// Treat an unreadable record as absent (shared secrets are then
+		// refused) and warn rather than fail the apply.
+		diags.AddWarning("Inline secret record unreadable", fmt.Sprintf(
+			"Could not read the provider's record of inline secret slots: %s. "+
+				"Treating it as absent; the next successful apply rewrites it.", err,
+		))
+		return nil, diags
+	}
+	slots := inlineSlots{}
+	for _, slot := range list {
+		slots[slotKey(slot)] = struct{}{}
+	}
+	return slots, diags
+}
+
+// writeInlineSlots records which slots of secrets were sent inline.
+func writeInlineSlots(ctx context.Context, p privateSetter, secrets map[string]any) diag.Diagnostics {
+	slots := collectInlineSlots(secrets)
+	list := make([][]string, 0, len(slots))
+	for key := range slots {
+		var slot []string
+		_ = json.Unmarshal([]byte(key), &slot)
+		list = append(list, slot)
+	}
+	sort.Slice(list, func(i, j int) bool { return slotKey(list[i]) < slotKey(list[j]) })
+	b, err := json.Marshal(list)
+	if err != nil {
+		var diags diag.Diagnostics
+		diags.AddError("Failed to record inline secret slots", err.Error())
+		return diags
+	}
+	return p.SetKey(ctx, inlineSecretSlotsKey, b)
 }

@@ -23,9 +23,16 @@ breaking changes are released as minor version bumps.
   so an update the API rejects leaves the secret unchanged; if the secret
   update itself fails, the apply reports it and the next apply retries it. A
   new name still creates a new secret. A name that belongs to a secret
-  the component does not reference is still refused by the API, so an
-  unrelated secret is never overwritten. When the updated secret is also used
-  by other components, the apply warns and names them. (ENG-11264)
+  the component does not reference is still refused by the API. The provider
+  also refuses to update a secret this component did not create inline: it
+  records in private state which slots it last sent inline, so switching a
+  slot from an `{ id }` reference to an inline secret with the referenced
+  secret's name fails with an error instead of overwriting a secret managed
+  elsewhere. After an import, or on state last written by an older provider
+  version, there is no record yet, so a same-name secret that other components
+  also use is refused until it is referenced by `{ id }`; the first successful
+  apply writes the record. When an updated secret is also used by other
+  components, the apply warns and names them. (ENG-11264)
 
 - **Documentation: the S3 examples on the `monad_input` and `monad_secret`
   pages now apply.** The inline-secret input example omitted `compression` and

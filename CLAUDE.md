@@ -186,7 +186,12 @@ never echoes raw secrets (it returns references/ids). The pattern:
   unknown); otherwise every inline slot goes out as its stored `{ id }`, so an
   unrelated change never re-sends a value. The secret write is deferred:
   `applyInPlaceSecretUpdates` runs only after the component's Replace call
-  succeeds, so a rejected update never changes a secret. A new name still
+  succeeds, so a rejected update never changes a secret. A name match is not
+  ownership: Create/Update record the inline slots in private state
+  (`writeInlineSlots`, key `inline_secret_slots`), and Update refuses an
+  in-place update of a slot that was a `{ id }` reference at the last apply;
+  with no record (import, older state) it refuses a secret other components
+  use. A new name still
   creates a new secret; a name owned by an unrelated secret still 409s. Hash
   the *configured* secrets, never the rewritten ones, or the next plan diffs.
 
