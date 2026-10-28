@@ -25,8 +25,9 @@ resource "monad_input" "archive_static_creds" {
       # Reference a secret managed elsewhere in this configuration.
       secret_key = { id = monad_secret.aws_secret_key.id }
 
-      # Or create one inline. The secret is stored by name, so rotate the
-      # value by giving it a new name too.
+      # Or create one inline. Changing the value under the same name updates
+      # that secret in place; a new name creates a new secret. Only a secret
+      # this input created inline is updated, never one referenced by id.
       access_key = {
         name        = "s3-archive-access-key"
         description = "Access key ID for the archive bucket reader"

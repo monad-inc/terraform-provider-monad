@@ -8,6 +8,32 @@ breaking changes are released as minor version bumps.
 
 ### Fixed
 
+- **Re-sending an inline secret on a connector no longer fails with `409
+  Conflict`.** The API creates every inline secret (`{ name, value,
+  description }`) as a new secret and refuses an existing name, so updating a
+  `monad_input`, `monad_output` or `monad_enrichment` that kept an inline
+  secret's name failed with "secrets with this name already exists". That
+  covered the one-time update after `terraform import` and any value change
+  that kept the name. On update, the provider now updates the secret the slot
+  already references, in place, when its name matches, and sends a reference
+  to it. The secret is only written when the configured secrets change: an
+  apply that changes only other attributes sends the existing reference and
+  leaves the secret untouched, so it never undoes a rotation made outside
+  Terraform. The secret is updated only after the connector update succeeds,
+  so an update the API rejects leaves the secret unchanged; if the secret
+  update itself fails, the apply reports it and the next apply retries it. A
+  new name still creates a new secret. A name that belongs to a secret
+  the component does not reference is still refused by the API. The provider
+  also refuses to update a secret this component did not create inline: it
+  records in private state which slots it last sent inline, so switching a
+  slot from an `{ id }` reference to an inline secret with the referenced
+  secret's name fails with an error instead of overwriting a secret managed
+  elsewhere. After an import, or on state last written by an older provider
+  version, there is no record yet, so a same-name secret that other components
+  also use is refused until it is referenced by `{ id }`; the first successful
+  apply writes the record. When an updated secret is also used by other
+  components, the apply warns and names them. (ENG-11264)
+
 - **Documentation: the S3 examples on the `monad_input` and `monad_secret`
   pages now apply.** The inline-secret input example omitted `compression` and
   `partition_format`, and the secret-reference output example also omitted

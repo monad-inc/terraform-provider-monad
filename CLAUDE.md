@@ -178,7 +178,22 @@ never echoes raw secrets (it returns references/ids). The pattern:
     mark it Unknown and let Update fill it.
 - Secrets must be a **structured value**, never a bare string: a new secret
   `{ value, name, description }` (all non-empty) or a reference `{ id }`. Monad
-  stores inline secrets **by name**, so a rotated value needs a fresh name.
+  creates every inline secret as a **new** secret and 409s on an existing name,
+  so on Update `secretsForUpdate` (`resource_connector_inline_secrets.go`)
+  sends an inline secret as `{ id }` after updating, in place, the secret the
+  slot already references when its name matches (ENG-11264). It writes a
+  secret only when `connectorSecretsChanged` (the planned `secrets_hash` is
+  unknown); otherwise every inline slot goes out as its stored `{ id }`, so an
+  unrelated change never re-sends a value. The secret write is deferred:
+  `applyInPlaceSecretUpdates` runs only after the component's Replace call
+  succeeds, so a rejected update never changes a secret. A name match is not
+  ownership: Create/Update record the inline slots in private state
+  (`writeInlineSlots`, key `inline_secret_slots`), and Update refuses an
+  in-place update of a slot that was a `{ id }` reference at the last apply;
+  with no record (import, older state) it refuses a secret other components
+  use. A new name still
+  creates a new secret; a name owned by an unrelated secret still 409s. Hash
+  the *configured* secrets, never the rewritten ones, or the next plan diffs.
 
 ### Never swallow diagnostics
 

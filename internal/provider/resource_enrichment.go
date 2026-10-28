@@ -200,6 +200,10 @@ func (r *ResourceEnrichment) Create(
 		resp.Diagnostics.AddError("Failed to fingerprint enrichment secrets", err.Error())
 		return
 	}
+	resp.Diagnostics.Append(writeInlineSlots(ctx, resp.Private, secrets)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	tflog.Trace(ctx, "created an enrichment resource")
 
@@ -296,6 +300,31 @@ func (r *ResourceEnrichment) Update(
 		return
 	}
 
+	owned, diags := readInlineSlots(ctx, req.Private)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Re-sending an inline secret under its existing name would 409; reuse the
+	// secret this enrichment already references instead (ENG-11264). The configured
+	// secrets are still what gets hashed.
+	sendSecrets, secretUpdates, diags := secretsForUpdate(ctx, r.client, "enrichment", data.ID.ValueString(), secrets,
+		connectorSecretsChanged(&data), owned,
+		func(ctx context.Context) (map[string]any, *http.Response, error) {
+			current, httpResp, err := r.client.OrganizationEnrichmentsAPI.
+				GetEnrichment(ctx, r.client.OrganizationID, data.ID.ValueString()).
+				Execute()
+			if err != nil {
+				return nil, httpResp, err
+			}
+			return current.Config.GetSecrets(), httpResp, nil
+		})
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	request := monad.RoutesV3PutEnrichmentRequest{
 		Name:        data.Name.ValueStringPointer(),
 		Description: data.Description.ValueStringPointer(),
@@ -305,7 +334,7 @@ func (r *ResourceEnrichment) Update(
 				MapmapOfStringAny: &settings,
 			},
 			Secrets: &monad.SecretProcessesorEnrichmentConfigSecrets{
-				MapmapOfStringAny: &secrets,
+				MapmapOfStringAny: &sendSecrets,
 			},
 		},
 	}
@@ -330,11 +359,22 @@ func (r *ResourceEnrichment) Update(
 		return
 	}
 
+	// Only now that the component update has succeeded, update in place the
+	// secrets it reuses, so a rejected update never changes a secret.
+	resp.Diagnostics.Append(applyInPlaceSecretUpdates(ctx, r.client, "enrichment", secretUpdates)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	// Preserve plan-known values (see Create); data already holds
 	// id/name/description/type/settings from the plan. Secrets stay write-only
 	// (nulled) and secrets_hash is refreshed to match what was just sent.
 	if err := finalizeConnectorSecrets(ctx, r.client.OrganizationID, &data, secrets); err != nil {
 		resp.Diagnostics.AddError("Failed to fingerprint enrichment secrets", err.Error())
+		return
+	}
+	resp.Diagnostics.Append(writeInlineSlots(ctx, resp.Private, secrets)...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 
