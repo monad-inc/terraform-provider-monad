@@ -39,8 +39,10 @@ breaking changes are released as minor version bumps.
   delete organization API keys. The token is returned by the API only at
   create and regenerate, so it is a sensitive attribute stored in state.
   Changing `expiration_time` regenerates the key in place (same id, new token,
-  old token revoked); changing `role_id` replaces it. A create that times out
-  and is adopted is regenerated immediately so state holds a usable token.
+  old token revoked); changing `role_id` replaces it. An `expiration_time`
+  known only at apply, such as one derived from `time_rotating`, plans the
+  token as known after apply. A create that times out and is adopted is
+  regenerated immediately so state holds a usable token.
 
 ### Fixed
 
