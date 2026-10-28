@@ -181,12 +181,21 @@ func (r *ResourceAPIKey) ModifyPlan(
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	creating := req.State.Raw.IsNull()
+
+	// An expiration_time known only at apply (e.g. from time_rotating) may
+	// differ from state, and then Update regenerates the key. Mark the token
+	// unknown now: Terraform re-plans at apply once the value is known, and
+	// a token that turns unknown only then fails as an inconsistent final
+	// plan, so the key could never rotate this way.
 	if plan.ExpirationTime.IsUnknown() {
+		if !creating {
+			resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("token"), types.StringUnknown())...)
+		}
 		return
 	}
 
 	var state ResourceAPIKeyModel
-	creating := req.State.Raw.IsNull()
 	if !creating {
 		resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 		if resp.Diagnostics.HasError() {
