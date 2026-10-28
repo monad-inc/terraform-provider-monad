@@ -6,6 +6,27 @@ breaking changes are released as minor version bumps.
 
 ## Unreleased
 
+### Added
+
+- **`monad_sso_connection` resource.** Manages a SAML SSO connection: `name`,
+  `description`, `email_domains`, `public_name`, `session_timeout_minutes`
+  and a `saml` block (`entity_id`, `metadata_url`). The connection holds no
+  secrets; Monad reads the IdP certificate from the metadata URL.
+  `email_domains` and `saml.entity_id` cannot be changed by the API, so a
+  change to either on an existing connection fails the plan. The provider
+  never replaces a connection, because deleting one deletes the users, roles
+  and sessions bound to it.
+  The resource page recommends `lifecycle { prevent_destroy = true }` to
+  guard against `terraform destroy` and removal from configuration.
+- `monad_pipeline`: `nodes.enabled` and `edges.disabled`. Omitted means enabled,
+  as before. A toggle made outside Terraform now shows as drift on the next
+  plan, and applying returns the node or edge to the configured state; declare
+  `enabled = false` / `disabled = true` to keep it disabled. (Unlike the
+  pipeline-level `enabled`, these can't adopt the server value when omitted:
+  they sit inside set blocks, where a computed attribute would plan as
+  unknown on every element.)
+- `monad_alert_rule`: `invert_selection`, default `false`, refreshed on read.
+
 ### Fixed
 
 - **Applying a pipeline no longer silently re-enables nodes and edges
@@ -16,23 +37,30 @@ breaking changes are released as minor version bumps.
   and `invert_selection = false` on every apply. `plan` never showed the
   change. An exclude-list alert rule edited by any apply therefore started
   alerting on exactly the pipelines it was meant to skip.
-
-### Added
-
-- `monad_pipeline`: `nodes.enabled` and `edges.disabled`. Omitted means enabled,
-  as before. A toggle made outside Terraform now shows as drift on the next
-  plan, and applying returns the node or edge to the configured state; declare
-  `enabled = false` / `disabled = true` to keep it disabled. (Unlike the
-  pipeline-level `enabled`, these can't adopt the server value when omitted:
-  they sit inside set blocks, where a computed attribute would plan as
-  unknown on every element.)
-- `monad_alert_rule`: `invert_selection`, default `false`, refreshed on read.
-
 - **Documentation: the S3 examples on the `monad_input` and `monad_secret`
   pages now apply.** The inline-secret input example omitted `compression` and
   `partition_format`, and the secret-reference output example also omitted
   `format_config`. The API now requires all of them, so copying either example
   failed with `400 Bad Request`.
+- **Documentation: `monad_alert_rule` no longer presents
+  `billing-metrics-cost-budget` as a type the provider can create.** A billing
+  account can span several Monad organizations, but an API key is scoped to a
+  single organization, so the Monad API refuses billing operations from API
+  keys. The provider authenticates with an API key, so creating a billing alert
+  rule always failed with `400 Bad Request`. The page now says so, and the
+  "Organization spend" example is removed. Create billing alert rules in the
+  Monad UI.
+
+### Changed
+
+- **`monad_alert_rule` rejects `billing-metrics-cost-budget` at validate time.**
+  `terraform validate` and `terraform plan` now report "Billing alert rules
+  cannot be managed with Terraform" on the `type` attribute, instead of the
+  plan succeeding and the apply failing with `400 Bad Request`. A `type` that
+  is unknown until apply is still left to the API. Such a rule could never be
+  created with this provider. If you imported one that was created in the UI,
+  remove it from your configuration and run
+  `terraform state rm monad_alert_rule.<name>`; the rule stays in Monad.
 
 ## 0.5.2
 
