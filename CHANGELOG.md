@@ -62,6 +62,12 @@ breaking changes are released as minor version bumps.
   data source looks any role up by name instead, so `monad_api_key.role_id` no
   longer needs a hard-coded UUID. `monad_permissions` lists the catalog.
   These are the provider's first data sources.
+- **Lookup data sources for existing objects (PRO-719):** `monad_input`,
+  `monad_output`, `monad_transform`, `monad_enrichment`, `monad_pipeline` and
+  `monad_secret`, by `id` or exact `name`, so a configuration can reference an
+  object managed elsewhere without pasting its UUID. Components also expose
+  `pipeline_ids` (the pipelines that use them); pipelines expose `enabled`.
+  The secret data source returns metadata only, never the value.
 
 ### Fixed
 

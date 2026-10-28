@@ -21,6 +21,9 @@ cd "$(dirname "$0")/.."
 # computed_meta.go declares created_at/updated_at/managed_by for every resource;
 # monad_secret, monad_sso_connection, monad_api_key and monad_role have no
 # managed_by, so their pages are checked by hand.
+# data_source_lookup.go is not mapped: it declares the union of attributes for
+# six lookup data sources, each of which exposes a subset, so their pages are
+# checked by hand.
 # A plain list rather than an associative array: macOS ships bash 3.2.
 sources="
 internal/provider/provider.go:templates/index.md.tmpl
