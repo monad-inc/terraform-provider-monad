@@ -8,6 +8,13 @@ breaking changes are released as minor version bumps.
 
 ### Added
 
+- **`monad_organization` resource.** Manages a sub-organization of the
+  provider's organization: `name`, `friendly_name` and `description`, with
+  `slug`, `parent_organization_id` and `billing_account_id` computed.
+  `deletion_protection` defaults to `true` and refuses, at plan time, any plan
+  that would destroy or replace the sub-organization. Pair it with an aliased
+  provider whose `organization_id` is the sub-organization's `id` to manage
+  resources inside it.
 - **`monad_sso_connection` resource.** Manages a SAML SSO connection: `name`,
   `description`, `email_domains`, `public_name`, `session_timeout_minutes`
   and a `saml` block (`entity_id`, `metadata_url`). The connection holds no
@@ -38,6 +45,11 @@ breaking changes are released as minor version bumps.
 
 ### Fixed
 
+- **A provider whose configuration is unknown at plan time no longer fails.**
+  An aliased provider with `organization_id = monad_organization.x.id` (or any
+  other value known only after apply) failed with "Unable to find organization
+  ID". The provider now defers connecting until the values are known, so a
+  sub-organization and the resources inside it can be created in one apply.
 - **Applying a pipeline no longer silently re-enables nodes and edges
   disabled in the UI, and applying an alert rule no longer resets
   `invert_selection` (ENG-11404).** The update requests replace the whole node
