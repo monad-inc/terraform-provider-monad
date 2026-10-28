@@ -68,9 +68,23 @@ type ResourcePipelineCondition struct {
 	Conditions []ResourcePipelineConditionCondition `tfsdk:"conditions"`
 }
 
+// ResourcePipelineConditionCondition is one element of an edge condition: a
+// rule (type_id + config) or a group (operator + conditions of rules). The API
+// caps nesting at depth 3 — the edge's operator, a group, the group's rules —
+// so one level of grouping is all a condition can hold (ENG-11405). Config is a
+// pointer because a group has no config block, and an absent single-nested
+// block is null.
 type ResourcePipelineConditionCondition struct {
-	TypeID types.String                             `tfsdk:"type_id"`
-	Config ResourcePipelineConditionConditionConfig `tfsdk:"config"`
+	TypeID     types.String                              `tfsdk:"type_id"`
+	Operator   types.String                              `tfsdk:"operator"`
+	Config     *ResourcePipelineConditionConditionConfig `tfsdk:"config"`
+	Conditions []ResourcePipelineConditionLeaf           `tfsdk:"conditions"`
+}
+
+// ResourcePipelineConditionLeaf is a rule inside a condition group.
+type ResourcePipelineConditionLeaf struct {
+	TypeID types.String                              `tfsdk:"type_id"`
+	Config *ResourcePipelineConditionConditionConfig `tfsdk:"config"`
 }
 
 // ResourcePipelineConditionConditionConfig carries every field in the API's
@@ -299,79 +313,35 @@ func (r *ResourcePipeline) Schema(
 							},
 							Blocks: map[string]schema.Block{
 								"conditions": schema.ListNestedBlock{
-									MarkdownDescription: "Nested conditions for the edge",
+									MarkdownDescription: "The rules and groups the operator combines. Each element is either a rule (`type_id` + `config`) or a group (`operator` + `conditions` of rules).",
 									NestedObject: schema.NestedBlockObject{
 										Attributes: map[string]schema.Attribute{
 											"type_id": schema.StringAttribute{
-												MarkdownDescription: "Type ID for the condition",
+												MarkdownDescription: "The rule to evaluate (for example `equals`). Set either this, for a rule, or `operator`, for a group.",
+												Optional:            true,
+											},
+											"operator": schema.StringAttribute{
+												MarkdownDescription: "Makes this element a group: one of `and`, `or`, `nor`, `xor`, `always`, `never`, applied to the nested `conditions`. Set either this or `type_id`.",
 												Optional:            true,
 											},
 										},
 										Blocks: map[string]schema.Block{
-											"config": schema.SingleNestedBlock{
-												MarkdownDescription: "Configuration for the condition. Which fields apply " +
-													"depends on `type_id`; setting one the rule does not read, or omitting " +
-													"one it requires, is reported at plan time.",
-												Attributes: map[string]schema.Attribute{
-													"key": schema.StringAttribute{
-														MarkdownDescription: "The key to check in the record. Use `*` to check all keys. " +
-															"Required by every rule except `sample`, where it is optional and selects " +
-															"hash-based sampling.",
-														Optional: true,
+											"config": conditionConfigBlock(),
+											// One level of grouping, because the API caps a condition at
+											// depth 3: the edge's operator, a group, the group's rules
+											// (core logical_conditions maxDepth). A group's children are
+											// rules only (ENG-11405).
+											"conditions": schema.ListNestedBlock{
+												MarkdownDescription: "The rules inside a group. Only valid when `operator` is set.",
+												NestedObject: schema.NestedBlockObject{
+													Attributes: map[string]schema.Attribute{
+														"type_id": schema.StringAttribute{
+															MarkdownDescription: "The rule to evaluate (for example `equals`).",
+															Optional:            true,
+														},
 													},
-													"value": schema.StringAttribute{
-														MarkdownDescription: "The single value to compare against, for `equals`, `contains`, " +
-															"`starts_with`, `ends_with`, `greater_than` and `less_than`. Numeric rules " +
-															"accept a numeric string (`\"100\"`). Supports JSON syntax: quoted strings, " +
-															"bare words, numbers, booleans.",
-														Optional: true,
-													},
-													"values": schema.ListAttribute{
-														MarkdownDescription: "The set of values to match against, for `equals_any`.",
-														Optional:            true,
-														ElementType:         types.StringType,
-													},
-													"pattern": schema.StringAttribute{
-														MarkdownDescription: "The regular expression to match against, for `matches_regex`.",
-														Optional:            true,
-													},
-													"percent": schema.Float64Attribute{
-														MarkdownDescription: "The percentage of records to pass through, for `sample`. " +
-															"Examples: `12.3`, `50`.",
-														Optional: true,
-													},
-													"rate": schema.StringAttribute{
-														MarkdownDescription: "**Deprecated.** The rate at which records are passed through, " +
-															"for the legacy `sample_rate` rule. Example: `'100ms'`, `'1s'`, `'1m'`. " +
-															"Use `sample` with `percent` instead.",
-														Optional: true,
-														DeprecationMessage: "The `sample_rate` rule is superseded by `sample`. Use " +
-															"type_id = \"sample\" with `percent` instead; `rate` is not surfaced in the " +
-															"Monad UI and is not part of the API's published rule catalogue.",
-													},
-													"not": schema.BoolAttribute{
-														MarkdownDescription: "Negate the result of this condition. Accepted by every rule " +
-															"except `sample`.",
-														Optional: true,
-													},
-													"case_insensitive": schema.BoolAttribute{
-														MarkdownDescription: "Compare case-insensitively (strings only). Accepted by " +
-															"`equals`, `equals_any`, `contains`, `starts_with` and `ends_with`.",
-														Optional: true,
-													},
-													"raw": schema.BoolAttribute{
-														MarkdownDescription: "For `contains`: treat the field value as a raw string and " +
-															"substring-match it. When false, arrays and objects are checked for exact " +
-															"element matches.",
-														Optional: true,
-													},
-													"null": schema.BoolAttribute{
-														MarkdownDescription: "For `is_empty`: also treat an explicit JSON null as empty.",
-														Optional:            true,
-													},
-													"whitespace_string": schema.BoolAttribute{
-														MarkdownDescription: "For `is_empty`: also treat a whitespace-only string as empty.",
-														Optional:            true,
+													Blocks: map[string]schema.Block{
+														"config": conditionConfigBlock(),
 													},
 												},
 											},
@@ -382,6 +352,78 @@ func (r *ResourcePipeline) Schema(
 						},
 					},
 				},
+			},
+		},
+	}
+}
+
+// conditionConfigBlock is a rule's `config` block, shared by the rules directly
+// under an edge condition and the rules inside a condition group.
+func conditionConfigBlock() schema.SingleNestedBlock {
+	return schema.SingleNestedBlock{
+		MarkdownDescription: "Configuration for the condition. Which fields apply " +
+			"depends on `type_id`; setting one the rule does not read, or omitting " +
+			"one it requires, is reported at plan time.",
+		Attributes: map[string]schema.Attribute{
+			"key": schema.StringAttribute{
+				MarkdownDescription: "The key to check in the record. Use `*` to check all keys. " +
+					"Required by every rule except `sample`, where it is optional and selects " +
+					"hash-based sampling.",
+				Optional: true,
+			},
+			"value": schema.StringAttribute{
+				MarkdownDescription: "The single value to compare against, for `equals`, `contains`, " +
+					"`starts_with`, `ends_with`, `greater_than` and `less_than`. Numeric rules " +
+					"accept a numeric string (`\"100\"`). Supports JSON syntax: quoted strings, " +
+					"bare words, numbers, booleans.",
+				Optional: true,
+			},
+			"values": schema.ListAttribute{
+				MarkdownDescription: "The set of values to match against, for `equals_any`.",
+				Optional:            true,
+				ElementType:         types.StringType,
+			},
+			"pattern": schema.StringAttribute{
+				MarkdownDescription: "The regular expression to match against, for `matches_regex`.",
+				Optional:            true,
+			},
+			"percent": schema.Float64Attribute{
+				MarkdownDescription: "The percentage of records to pass through, for `sample`. " +
+					"Examples: `12.3`, `50`.",
+				Optional: true,
+			},
+			"rate": schema.StringAttribute{
+				MarkdownDescription: "**Deprecated.** The rate at which records are passed through, " +
+					"for the legacy `sample_rate` rule. Example: `'100ms'`, `'1s'`, `'1m'`. " +
+					"Use `sample` with `percent` instead.",
+				Optional: true,
+				DeprecationMessage: "The `sample_rate` rule is superseded by `sample`. Use " +
+					"type_id = \"sample\" with `percent` instead; `rate` is not surfaced in the " +
+					"Monad UI and is not part of the API's published rule catalogue.",
+			},
+			"not": schema.BoolAttribute{
+				MarkdownDescription: "Negate the result of this condition. Accepted by every rule " +
+					"except `sample`.",
+				Optional: true,
+			},
+			"case_insensitive": schema.BoolAttribute{
+				MarkdownDescription: "Compare case-insensitively (strings only). Accepted by " +
+					"`equals`, `equals_any`, `contains`, `starts_with` and `ends_with`.",
+				Optional: true,
+			},
+			"raw": schema.BoolAttribute{
+				MarkdownDescription: "For `contains`: treat the field value as a raw string and " +
+					"substring-match it. When false, arrays and objects are checked for exact " +
+					"element matches.",
+				Optional: true,
+			},
+			"null": schema.BoolAttribute{
+				MarkdownDescription: "For `is_empty`: also treat an explicit JSON null as empty.",
+				Optional:            true,
+			},
+			"whitespace_string": schema.BoolAttribute{
+				MarkdownDescription: "For `is_empty`: also treat a whitespace-only string as empty.",
+				Optional:            true,
 			},
 		},
 	}
@@ -428,16 +470,50 @@ func buildPipelineRequestEdges(ctx context.Context, edges []ResourcePipelineEdge
 
 		out[i].Conditions.Conditions = make([]monad.ModelsConditionEvaluatable, len(edge.Condition.Conditions))
 		for j, condition := range edge.Condition.Conditions {
-			// Serialize per type_id: emit only the fields this rule reads, and
-			// only when set. Sending the same three keys for every rule is what
-			// made value comparisons silently route nothing (ENG-9546).
-			out[i].Conditions.Conditions[j] = monad.ModelsConditionEvaluatable{
-				TypeId: condition.TypeID.ValueStringPointer(),
-				Config: buildConditionConfig(condition.TypeID.ValueString(), condition.Config),
-			}
+			out[i].Conditions.Conditions[j] = buildConditionRequest(condition)
 		}
 	}
 	return out, nil
+}
+
+// buildConditionRequest serializes one element of an edge condition: a group
+// becomes a logical node holding its rules, anything else a rule.
+func buildConditionRequest(c ResourcePipelineConditionCondition) monad.ModelsConditionEvaluatable {
+	if isConditionGroup(c) {
+		rules := make([]monad.ModelsConditionEvaluatable, len(c.Conditions))
+		for k, rule := range c.Conditions {
+			rules[k] = buildConditionRuleRequest(rule.TypeID, rule.Config)
+		}
+		return monad.ModelsConditionEvaluatable{
+			Operator:   (*monad.ModelsConditionOperator)(c.Operator.ValueStringPointer()),
+			Conditions: rules,
+		}
+	}
+	return buildConditionRuleRequest(c.TypeID, c.Config)
+}
+
+// buildConditionRuleRequest serializes a rule per type_id: only the fields the
+// rule reads, and only when set. Sending the same three keys for every rule is
+// what made value comparisons silently route nothing (ENG-9546).
+func buildConditionRuleRequest(typeID types.String, cfg *ResourcePipelineConditionConditionConfig) monad.ModelsConditionEvaluatable {
+	return monad.ModelsConditionEvaluatable{
+		TypeId: typeID.ValueStringPointer(),
+		Config: buildConditionConfig(typeID.ValueString(), conditionConfigOrEmpty(cfg)),
+	}
+}
+
+// isConditionGroup reports whether an element is a group (sets `operator`)
+// rather than a rule.
+func isConditionGroup(c ResourcePipelineConditionCondition) bool {
+	return !c.Operator.IsNull() && !c.Operator.IsUnknown() && c.Operator.ValueString() != ""
+}
+
+// conditionConfigOrEmpty treats an absent config block as one with nothing set.
+func conditionConfigOrEmpty(cfg *ResourcePipelineConditionConditionConfig) ResourcePipelineConditionConditionConfig {
+	if cfg == nil {
+		return ResourcePipelineConditionConditionConfig{}
+	}
+	return *cfg
 }
 
 func (r *ResourcePipeline) Create(
@@ -606,6 +682,7 @@ func (r *ResourcePipeline) Read(
 	// API view populates. Only genuine topology drift is written back.
 	data.Nodes = reconcilePipelineNodes(data.Nodes, buildPipelineStateNodes(pipeline))
 	data.Edges = reconcilePipelineEdges(data.Edges, buildPipelineStateEdges(pipeline))
+	normalizeConditionLists(data.Edges)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -658,11 +735,7 @@ func buildPipelineStateEdges(pipeline *monad.ModelsPipelineConfigV2) []ResourceP
 			operator = types.StringPointerValue((*string)(edge.Conditions.Operator))
 			conditions = make([]ResourcePipelineConditionCondition, len(edge.Conditions.Conditions))
 			for j, condition := range edge.Conditions.Conditions {
-				typeID := types.StringPointerValue(condition.TypeId)
-				conditions[j] = ResourcePipelineConditionCondition{
-					TypeID: typeID,
-					Config: conditionConfigFromAPI(typeID.ValueString(), condition.Config),
-				}
+				conditions[j] = conditionFromAPI(condition)
 			}
 		}
 
@@ -694,6 +767,46 @@ func buildPipelineStateEdges(pipeline *monad.ModelsPipelineConfigV2) []ResourceP
 		}
 	}
 	return edges
+}
+
+// conditionFromAPI maps one element of an API condition into the model. A
+// logical node becomes a group of rules; a leaf becomes a rule. Nested lists are
+// always non-nil: a list block is empty, never null, in configuration.
+func conditionFromAPI(c monad.ModelsConditionEvaluatable) ResourcePipelineConditionCondition {
+	if c.Operator != nil && *c.Operator != "" {
+		rules := make([]ResourcePipelineConditionLeaf, len(c.Conditions))
+		for k, rule := range c.Conditions {
+			typeID := types.StringPointerValue(rule.TypeId)
+			cfg := conditionConfigFromAPI(typeID.ValueString(), rule.Config)
+			rules[k] = ResourcePipelineConditionLeaf{TypeID: typeID, Config: &cfg}
+		}
+		return ResourcePipelineConditionCondition{
+			TypeID:     types.StringNull(),
+			Operator:   types.StringValue(string(*c.Operator)),
+			Conditions: rules,
+		}
+	}
+	typeID := types.StringPointerValue(c.TypeId)
+	cfg := conditionConfigFromAPI(typeID.ValueString(), c.Config)
+	return ResourcePipelineConditionCondition{
+		TypeID:     typeID,
+		Operator:   types.StringNull(),
+		Config:     &cfg,
+		Conditions: []ResourcePipelineConditionLeaf{},
+	}
+}
+
+// normalizeConditionLists replaces a nil group list with an empty one. State
+// written before groups existed decodes the new block as null, while the
+// configuration always carries an empty list.
+func normalizeConditionLists(edges []ResourcePipelineEdge) {
+	for i := range edges {
+		for j := range edges[i].Condition.Conditions {
+			if edges[i].Condition.Conditions[j].Conditions == nil {
+				edges[i].Condition.Conditions[j].Conditions = []ResourcePipelineConditionLeaf{}
+			}
+		}
+	}
 }
 
 // buildSchemaDetectionRequest turns the optional block into the API's spec.
@@ -872,23 +985,14 @@ func pipelineEdgesComparable(edges []ResourcePipelineEdge) []any {
 	for i, e := range edges {
 		conditions := make([]any, len(e.Condition.Conditions))
 		for j, c := range e.Condition.Conditions {
-			// Every config field must appear here. A field missing from the
-			// comparison is one whose drift reconcilePipelineEdges cannot see,
-			// so it would silently keep the prior state value.
-			conditions[j] = map[string]any{
-				"type_id":           stringOrNil(c.TypeID),
-				"key":               stringOrNil(c.Config.Key),
-				"value":             stringOrNil(c.Config.Value),
-				"values":            listOrNil(c.Config.Values),
-				"pattern":           stringOrNil(c.Config.Pattern),
-				"percent":           float64OrNil(c.Config.Percent),
-				"rate":              stringOrNil(c.Config.Rate),
-				"not":               boolOrNil(c.Config.Not),
-				"case_insensitive":  boolOrNil(c.Config.CaseInsensitive),
-				"raw":               boolOrNil(c.Config.Raw),
-				"null":              boolOrNil(c.Config.Null),
-				"whitespace_string": boolOrNil(c.Config.WhitespaceString),
+			m := conditionRuleComparable(c.TypeID, c.Config)
+			m["operator"] = stringOrNil(c.Operator)
+			rules := make([]any, len(c.Conditions))
+			for k, rule := range c.Conditions {
+				rules[k] = conditionRuleComparable(rule.TypeID, rule.Config)
 			}
+			m["conditions"] = rules
+			conditions[j] = m
 		}
 		out[i] = map[string]any{
 			"name":             stringOrNil(e.Name),
@@ -902,6 +1006,27 @@ func pipelineEdgesComparable(edges []ResourcePipelineEdge) []any {
 		}
 	}
 	return out
+}
+
+// conditionRuleComparable is a rule's drift-comparison view. Every config field
+// must appear here: a field missing from the comparison is one whose drift
+// reconcilePipelineEdges cannot see, so it would silently keep the prior value.
+func conditionRuleComparable(typeID types.String, cfgPtr *ResourcePipelineConditionConditionConfig) map[string]any {
+	cfg := conditionConfigOrEmpty(cfgPtr)
+	return map[string]any{
+		"type_id":           stringOrNil(typeID),
+		"key":               stringOrNil(cfg.Key),
+		"value":             stringOrNil(cfg.Value),
+		"values":            listOrNil(cfg.Values),
+		"pattern":           stringOrNil(cfg.Pattern),
+		"percent":           float64OrNil(cfg.Percent),
+		"rate":              stringOrNil(cfg.Rate),
+		"not":               boolOrNil(cfg.Not),
+		"case_insensitive":  boolOrNil(cfg.CaseInsensitive),
+		"raw":               boolOrNil(cfg.Raw),
+		"null":              boolOrNil(cfg.Null),
+		"whitespace_string": boolOrNil(cfg.WhitespaceString),
+	}
 }
 
 func stringOrNil(s types.String) any {

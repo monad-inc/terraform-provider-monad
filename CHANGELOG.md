@@ -26,6 +26,15 @@ breaking changes are released as minor version bumps.
   they sit inside set blocks, where a computed attribute would plan as
   unknown on every element.)
 - `monad_alert_rule`: `invert_selection`, default `false`, refreshed on read.
+- `monad_pipeline`: edge-condition **groups** (ENG-11405). An element of
+  `edges.condition.conditions` can now set `operator` and nested `conditions`
+  instead of `type_id` and `config`, so `and(or(a, b), c)` can be written and
+  imported. Before, the provider modelled one level only: a group created in
+  the UI or API read back as an empty rule, and `terraform import
+  -generate-config-out` emitted config that failed with `Missing condition
+  type_id`. The API caps conditions at three levels (edge operator, group,
+  rules), so a group holds rules, not other groups. Additive: existing
+  configurations and state are unchanged.
 
 ### Fixed
 
