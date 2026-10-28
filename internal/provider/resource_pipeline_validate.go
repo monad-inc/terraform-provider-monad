@@ -8,11 +8,13 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
 var _ resource.ResourceWithValidateConfig = &ResourcePipeline{}
 
-// ValidateConfig checks each edge-condition leaf against its rule's schema.
+// ValidateConfig checks each edge-condition rule against its rule's schema, and
+// that every element is a well-formed rule or group.
 //
 // The API accepts a leaf whose config does not match its type_id and then
 // routes nothing at runtime — no error at save, none in the node logs, none on
@@ -31,44 +33,112 @@ func (r *ResourcePipeline) ValidateConfig(
 	}
 
 	for i, edge := range data.Edges {
-		for j, leaf := range edge.Condition.Conditions {
-			configPath := path.Root("edges").
+		for j, element := range edge.Condition.Conditions {
+			elementPath := path.Root("edges").
 				AtListIndex(i).
 				AtName("condition").
 				AtName("conditions").
-				AtListIndex(j).
-				AtName("config")
+				AtListIndex(j)
 
-			validateConditionLeaf(leaf, configPath, resp)
+			validateConditionElement(element, elementPath, resp)
 		}
 	}
 }
 
+// validateConditionElement checks that an element is either a rule or a group,
+// not both, and validates the rules it holds.
+func validateConditionElement(
+	element ResourcePipelineConditionCondition,
+	elementPath path.Path,
+	resp *resource.ValidateConfigResponse,
+) {
+	// Values from a variable or another resource are not knowable at validate
+	// time; leave those to the API.
+	if element.Operator.IsUnknown() || element.TypeID.IsUnknown() {
+		return
+	}
+
+	if !isConditionGroup(element) {
+		if len(element.Conditions) > 0 {
+			resp.Diagnostics.AddAttributeError(
+				elementPath.AtName("conditions"),
+				"Nested conditions need an operator",
+				"Only a group can contain `conditions`. Set `operator` (and drop `type_id` and "+
+					"`config`) to make this element a group of the rules inside it.",
+			)
+		}
+		validateConditionLeaf(element.TypeID, element.Config, elementPath.AtName("config"), resp)
+		return
+	}
+
+	if !element.TypeID.IsNull() && element.TypeID.ValueString() != "" {
+		resp.Diagnostics.AddAttributeError(
+			elementPath.AtName("type_id"),
+			"Condition is both a rule and a group",
+			"Set `type_id` (with `config`) for a rule, or `operator` (with nested `conditions`) "+
+				"for a group, not both.",
+		)
+		return
+	}
+	if element.Config != nil && conditionConfigHasAnyField(*element.Config) {
+		resp.Diagnostics.AddAttributeError(
+			elementPath.AtName("config"),
+			"Condition group takes no config",
+			"A group combines its nested `conditions` with `operator`; settings belong on "+
+				"each rule inside it.",
+		)
+	}
+
+	operator := element.Operator.ValueString()
+	if len(element.Conditions) == 0 && operator != "always" && operator != "never" {
+		resp.Diagnostics.AddAttributeError(
+			elementPath.AtName("conditions"),
+			"Empty condition group",
+			fmt.Sprintf("A group with operator %q needs at least one rule in `conditions`.", operator),
+		)
+	}
+
+	for k, rule := range element.Conditions {
+		validateConditionLeaf(rule.TypeID, rule.Config, elementPath.AtName("conditions").AtListIndex(k).AtName("config"), resp)
+	}
+}
+
+// conditionConfigHasAnyField reports whether any config field is set.
+func conditionConfigHasAnyField(cfg ResourcePipelineConditionConditionConfig) bool {
+	for _, field := range allConditionFields {
+		if _, set := conditionFieldValue(cfg, field); set {
+			return true
+		}
+	}
+	return false
+}
+
 func validateConditionLeaf(
-	leaf ResourcePipelineConditionCondition,
+	leafTypeID types.String,
+	cfgPtr *ResourcePipelineConditionConditionConfig,
 	configPath path.Path,
 	resp *resource.ValidateConfigResponse,
 ) {
 	typeIDPath := configPath.ParentPath().AtName("type_id")
+	cfg := conditionConfigOrEmpty(cfgPtr)
 
-	// A value that comes from a variable or another resource is not knowable at
-	// validate time; leave those to the API.
-	if leaf.TypeID.IsUnknown() {
+	if leafTypeID.IsUnknown() {
 		return
 	}
 
-	if leaf.TypeID.IsNull() || leaf.TypeID.ValueString() == "" {
+	if leafTypeID.IsNull() || leafTypeID.ValueString() == "" {
 		resp.Diagnostics.AddAttributeError(
 			typeIDPath,
 			"Missing condition type_id",
-			"Every condition leaf needs a `type_id` naming the rule to evaluate "+
-				"(for example \"equals\", \"equals_any\", \"key_exists\"). A leaf without one "+
-				"is not evaluated and the edge routes nothing.",
+			"Every condition rule needs a `type_id` naming the rule to evaluate "+
+				"(for example \"equals\", \"equals_any\", \"key_exists\"); to group rules "+
+				"instead, set `operator` and nest them in `conditions`. A rule without a "+
+				"type_id is not evaluated and the edge routes nothing.",
 		)
 		return
 	}
 
-	typeID := leaf.TypeID.ValueString()
+	typeID := leafTypeID.ValueString()
 	spec, known := conditionRules[typeID]
 	if !known {
 		// Warn rather than error: a rule shipped by the API after this provider
@@ -87,7 +157,7 @@ func validateConditionLeaf(
 	}
 
 	for _, field := range spec.required {
-		if _, set := conditionFieldValue(leaf.Config, field); !set {
+		if _, set := conditionFieldValue(cfg, field); !set {
 			resp.Diagnostics.AddAttributeError(
 				configPath.AtName(field),
 				"Missing required condition field",
@@ -103,7 +173,7 @@ func validateConditionLeaf(
 		if spec.allows(field) {
 			continue
 		}
-		if _, set := conditionFieldValue(leaf.Config, field); set {
+		if _, set := conditionFieldValue(cfg, field); set {
 			resp.Diagnostics.AddAttributeError(
 				configPath.AtName(field),
 				"Condition field not used by this rule",
