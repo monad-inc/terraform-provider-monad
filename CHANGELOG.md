@@ -35,6 +35,14 @@ breaking changes are released as minor version bumps.
   type_id`. The API caps conditions at three levels (edge operator, group,
   rules), so a group holds rules, not other groups. Additive: existing
   configurations and state are unchanged.
+- **`monad_api_key` resource (PRO-713).** Create, rename, rotate, import and
+  delete organization API keys. The token is returned by the API only at
+  create and regenerate, so it is a sensitive attribute stored in state.
+  Changing `expiration_time` regenerates the key in place (same id, new token,
+  old token revoked); changing `role_id` replaces it. An `expiration_time`
+  known only at apply, such as one derived from `time_rotating`, plans the
+  token as known after apply. A create that times out and is adopted is
+  regenerated immediately so state holds a usable token.
 
 ### Fixed
 
