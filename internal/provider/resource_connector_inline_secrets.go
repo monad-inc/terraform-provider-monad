@@ -21,12 +21,19 @@ type storedSecretsFunc func(ctx context.Context) (map[string]any, *http.Response
 // configured ones, with inline secrets reused in place where possible (see
 // reuseInlineSecretsInPlace). The component is only read when an inline
 // secret is configured.
+//
+// secretsChanged reports whether the configured secrets differ from the last
+// ones applied (the planned `secrets_hash` is unknown). When they don't, an
+// inline secret is sent as a reference to the secret its slot already holds
+// and is never written: re-sending its value on an unrelated change would undo
+// a rotation made outside Terraform.
 func secretsForUpdate(
 	ctx context.Context,
 	c *client.Client,
 	kind string,
 	selfID string,
 	configured map[string]any,
+	secretsChanged bool,
 	readStored storedSecretsFunc,
 ) (map[string]any, diag.Diagnostics) {
 	if !hasInlineSecrets(configured) {
@@ -42,7 +49,34 @@ func secretsForUpdate(
 		))
 		return nil, diags
 	}
+	if !secretsChanged {
+		return referenceStoredSecrets(configured, stored), nil
+	}
 	return reuseInlineSecretsInPlace(ctx, c, configured, stored, selfID)
+}
+
+// referenceStoredSecrets sends each inline secret as a reference to the secret
+// its slot already holds, without reading or writing that secret. An inline
+// slot with no stored reference is sent unchanged.
+func referenceStoredSecrets(configured, stored map[string]any) map[string]any {
+	out := make(map[string]any, len(configured))
+	for key, value := range configured {
+		storedValue := stored[key]
+		if _, ok := inlineSecret(value); ok {
+			out[key] = value
+			if id := secretRefID(storedValue); id != "" {
+				out[key] = map[string]any{"id": id}
+			}
+			continue
+		}
+		if nested, ok := value.(map[string]any); ok && !isSecretRef(nested) {
+			storedNested, _ := storedValue.(map[string]any)
+			out[key] = referenceStoredSecrets(nested, storedNested)
+			continue
+		}
+		out[key] = value
+	}
+	return out
 }
 
 // The API turns every inline secret ({ name, value, description }) on a

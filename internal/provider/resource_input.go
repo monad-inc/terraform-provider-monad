@@ -235,6 +235,7 @@ func (r *ResourceInput) Update(
 	// secret this input already references instead (ENG-11264). The configured
 	// secrets are still what gets hashed.
 	sendSecrets, diags := secretsForUpdate(ctx, r.client, "input", data.ID.ValueString(), secrets,
+		connectorSecretsChanged(&data),
 		func(ctx context.Context) (map[string]any, *http.Response, error) {
 			current, httpResp, err := r.client.OrganizationInputsAPI.
 				GetOrganizationInput(ctx, r.client.OrganizationID, data.ID.ValueString()).

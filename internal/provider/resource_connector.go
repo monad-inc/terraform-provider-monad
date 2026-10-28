@@ -141,6 +141,15 @@ func finalizeConnectorSecrets(ctx context.Context, orgID string, data *ResourceC
 	return nil
 }
 
+// connectorSecretsChanged reports whether the plan applies changed secrets:
+// modifyConnectorPlanForSecrets marks `secrets_hash` unknown when the
+// configured secrets no longer match the stored hash (including after an
+// import, when there is no stored hash), and UseStateForUnknown keeps it
+// known otherwise.
+func connectorSecretsChanged(plan *ResourceConnectorModel) bool {
+	return plan.Config != nil && plan.Config.SecretsHash.IsUnknown()
+}
+
 // refreshConnectorSettings updates the config block in state during Read.
 // `settings` is reconciled against prior state so genuine drift surfaces while
 // the practitioner-authored cty representation is preserved when nothing

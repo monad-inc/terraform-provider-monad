@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -220,7 +221,7 @@ func TestSecretsForUpdate(t *testing.T) {
 
 	t.Run("no inline secrets skips the component read", func(t *testing.T) {
 		configured := map[string]any{"secret_key": ref("sec-ref")}
-		got, diags := secretsForUpdate(ctx, nil, "input", selfID, configured,
+		got, diags := secretsForUpdate(ctx, nil, "input", selfID, configured, true,
 			func(context.Context) (map[string]any, *http.Response, error) {
 				t.Fatal("component read when no inline secret is configured")
 				return nil, nil, nil
@@ -231,13 +232,88 @@ func TestSecretsForUpdate(t *testing.T) {
 
 	t.Run("component read error surfaces", func(t *testing.T) {
 		_, diags := secretsForUpdate(ctx, nil, "input", selfID,
-			map[string]any{"access_key": inline("k", "v", "d")},
+			map[string]any{"access_key": inline("k", "v", "d")}, true,
 			func(context.Context) (map[string]any, *http.Response, error) {
 				return nil, nil, errors.New("connection refused")
 			})
 		require.True(t, diags.HasError())
 		assert.Contains(t, diags.Errors()[0].Detail(), "Unable to read input before update")
 	})
+
+	stored := func(secrets map[string]any) storedSecretsFunc {
+		return func(context.Context) (map[string]any, *http.Response, error) {
+			return secrets, nil, nil
+		}
+	}
+
+	t.Run("unchanged secrets are sent as stored references without a secret write", func(t *testing.T) {
+		f := newFakeSecretsServer(t)
+		f.add("sec-1", "archive-ak", map[string]any{"id": selfID})
+		f.add("sec-n", "nested-key", map[string]any{"id": selfID})
+
+		configured := map[string]any{
+			"access_key": inline("archive-ak", "AKIA", "reader key"),
+			"secret_key": ref("sec-ref"),
+			"auth":       map[string]any{"token": inline("nested-key", "v", "d")},
+		}
+		got, diags := secretsForUpdate(ctx, f.client(), "input", selfID, configured, false,
+			stored(map[string]any{
+				"access_key": ref("sec-1"),
+				"secret_key": ref("sec-ref"),
+				"auth":       map[string]any{"token": ref("sec-n")},
+			}))
+
+		require.False(t, diags.HasError(), "%v", diags)
+		assert.Empty(t, diags.Warnings())
+		assert.Equal(t, map[string]any{
+			"access_key": ref("sec-1"),
+			"secret_key": ref("sec-ref"),
+			"auth":       map[string]any{"token": ref("sec-n")},
+		}, got)
+		assert.Zero(t, f.gets, "no secret read when the secrets did not change")
+		assert.Empty(t, f.updates, "no secret write when the secrets did not change")
+		assert.Equal(t, inline("archive-ak", "AKIA", "reader key"), configured["access_key"],
+			"configured secrets must not be modified; they are hashed")
+	})
+
+	t.Run("unchanged inline secret with no stored reference is sent inline", func(t *testing.T) {
+		f := newFakeSecretsServer(t)
+
+		want := inline("archive-ak", "v", "d")
+		got, diags := secretsForUpdate(ctx, f.client(), "input", selfID,
+			map[string]any{"access_key": want}, false, stored(map[string]any{}))
+
+		require.False(t, diags.HasError(), "%v", diags)
+		assert.Equal(t, want, got["access_key"])
+		assert.Zero(t, f.gets)
+	})
+
+	t.Run("changed secrets update the referenced secret in place", func(t *testing.T) {
+		f := newFakeSecretsServer(t)
+		f.add("sec-1", "archive-ak", map[string]any{"id": selfID})
+
+		got, diags := secretsForUpdate(ctx, f.client(), "input", selfID,
+			map[string]any{"access_key": inline("archive-ak", "AKIANEW", "reader key")}, true,
+			stored(map[string]any{"access_key": ref("sec-1")}))
+
+		require.False(t, diags.HasError(), "%v", diags)
+		assert.Equal(t, ref("sec-1"), got["access_key"])
+		require.Len(t, f.updates, 1)
+		assert.Equal(t, "sec-1", f.updates[0].ID)
+	})
+}
+
+func TestConnectorSecretsChanged(t *testing.T) {
+	assert.False(t, connectorSecretsChanged(&ResourceConnectorModel{}), "no config block")
+	assert.False(t, connectorSecretsChanged(&ResourceConnectorModel{
+		Config: &ResourceConnectorConfig{SecretsHash: types.StringValue("h")},
+	}), "stored hash kept: secrets unchanged")
+	assert.False(t, connectorSecretsChanged(&ResourceConnectorModel{
+		Config: &ResourceConnectorConfig{SecretsHash: types.StringNull()},
+	}), "no secrets configured")
+	assert.True(t, connectorSecretsChanged(&ResourceConnectorModel{
+		Config: &ResourceConnectorConfig{SecretsHash: types.StringUnknown()},
+	}), "hash unknown: secrets changed or first apply after import")
 }
 
 func TestHasInlineSecrets(t *testing.T) {

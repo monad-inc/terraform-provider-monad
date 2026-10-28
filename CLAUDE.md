@@ -181,7 +181,10 @@ never echoes raw secrets (it returns references/ids). The pattern:
   creates every inline secret as a **new** secret and 409s on an existing name,
   so on Update `secretsForUpdate` (`resource_connector_inline_secrets.go`)
   sends an inline secret as `{ id }` after updating, in place, the secret the
-  slot already references when its name matches (ENG-11264). A new name still
+  slot already references when its name matches (ENG-11264). It writes a
+  secret only when `connectorSecretsChanged` (the planned `secrets_hash` is
+  unknown); otherwise every inline slot goes out as its stored `{ id }`, so an
+  unrelated change never re-sends a value. A new name still
   creates a new secret; a name owned by an unrelated secret still 409s. Hash
   the *configured* secrets, never the rewritten ones, or the next plan diffs.
 

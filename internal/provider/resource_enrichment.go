@@ -300,6 +300,7 @@ func (r *ResourceEnrichment) Update(
 	// secret this enrichment already references instead (ENG-11264). The configured
 	// secrets are still what gets hashed.
 	sendSecrets, diags := secretsForUpdate(ctx, r.client, "enrichment", data.ID.ValueString(), secrets,
+		connectorSecretsChanged(&data),
 		func(ctx context.Context) (map[string]any, *http.Response, error) {
 			current, httpResp, err := r.client.OrganizationEnrichmentsAPI.
 				GetEnrichment(ctx, r.client.OrganizationID, data.ID.ValueString()).

@@ -16,7 +16,10 @@ breaking changes are released as minor version bumps.
   covered the one-time update after `terraform import` and any value change
   that kept the name. On update, the provider now updates the secret the slot
   already references, in place, when its name matches, and sends a reference
-  to it. A new name still creates a new secret. A name that belongs to a secret
+  to it. The secret is only written when the configured secrets change: an
+  apply that changes only other attributes sends the existing reference and
+  leaves the secret untouched, so it never undoes a rotation made outside
+  Terraform. A new name still creates a new secret. A name that belongs to a secret
   the component does not reference is still refused by the API, so an
   unrelated secret is never overwritten. When the updated secret is also used
   by other components, the apply warns and names them. (ENG-11264)
