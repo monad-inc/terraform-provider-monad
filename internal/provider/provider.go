@@ -172,11 +172,15 @@ func (p *MonadProvider) Resources(ctx context.Context) []func() resource.Resourc
 		NewResourceEnrichment,
 		NewResourceAlertRule,
 		NewResourceAPIKey,
+		NewResourceRole,
 	}
 }
 
 func (p *MonadProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{}
+	return []func() datasource.DataSource{
+		NewDataSourcePermissions,
+		NewDataSourceRole,
+	}
 }
 
 func (p *MonadProvider) EphemeralResources(ctx context.Context) []func() ephemeral.EphemeralResource {

@@ -30,7 +30,7 @@ Three platform rules shape this resource:
 The following arguments are required:
 
 * `name` - (Required) Name of the key. Can be changed in place.
-* `role_id` - (Required) ID of the organization role the key acts as. Changing it replaces the key.
+* `role_id` - (Required) ID of the organization role the key acts as: a `monad_role` resource, or a built-in role looked up with the `monad_role` data source (`data.monad_role.reader.id`). Changing it replaces the key.
 * `expiration_time` - (Required) When the key expires, as an RFC 3339 timestamp (`2027-01-01T00:00:00Z`). Must be in the future when it is set or changed; the provider checks this at plan time. Changing it regenerates the key and its token. Rewriting the same moment in another form (an offset instead of `Z`) does not regenerate.
 
 The following arguments are optional:

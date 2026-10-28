@@ -10,8 +10,8 @@ breaking changes are released as minor version bumps.
 
 - **Read-only `created_at`, `updated_at` and `managed_by` on every resource
   (ENG-11406)** — the API's bookkeeping fields, populated on create, read and
-  import (`monad_secret`, `monad_sso_connection` and `monad_api_key` have no
-  `managed_by`).
+  import (`monad_secret`, `monad_sso_connection`, `monad_api_key` and
+  `monad_role` have no `managed_by`).
   `updated_at` shows as `(known after apply)` whenever a resource has other
   changes, including a change to a write-only secret alone (rotating a
   `monad_secret` value or a connector's `config.secrets`, or the first apply
@@ -53,6 +53,15 @@ breaking changes are released as minor version bumps.
   known only at apply, such as one derived from `time_rotating`, plans the
   token as known after apply. A create that times out and is adopted is
   regenerated immediately so state holds a usable token.
+- **`monad_role` resource and `monad_role` / `monad_permissions` data sources
+  (PRO-714).** `monad_role` manages a custom role, with permissions written as
+  slugs (`pipeline:read`) and resolved to the catalog's IDs; an unknown slug
+  fails at plan time with the valid list. At least one permission is required,
+  because the API cannot remove a role's last one. The built-in roles are
+  protected by the API, so `terraform import` refuses them; the `monad_role`
+  data source looks any role up by name instead, so `monad_api_key.role_id` no
+  longer needs a hard-coded UUID. `monad_permissions` lists the catalog.
+  These are the provider's first data sources.
 
 ### Fixed
 
