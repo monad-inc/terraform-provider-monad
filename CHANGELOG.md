@@ -6,6 +6,27 @@ breaking changes are released as minor version bumps.
 
 ## Unreleased
 
+### Added
+
+- **`monad_sso_connection` resource.** Manages a SAML SSO connection: `name`,
+  `description`, `email_domains`, `public_name`, `session_timeout_minutes`
+  and a `saml` block (`entity_id`, `metadata_url`). The connection holds no
+  secrets; Monad reads the IdP certificate from the metadata URL.
+  `email_domains` and `saml.entity_id` cannot be changed by the API, so a
+  change to either on an existing connection fails the plan. The provider
+  never replaces a connection, because deleting one deletes the users, roles
+  and sessions bound to it.
+  The resource page recommends `lifecycle { prevent_destroy = true }` to
+  guard against `terraform destroy` and removal from configuration.
+- `monad_pipeline`: `nodes.enabled` and `edges.disabled`. Omitted means enabled,
+  as before. A toggle made outside Terraform now shows as drift on the next
+  plan, and applying returns the node or edge to the configured state; declare
+  `enabled = false` / `disabled = true` to keep it disabled. (Unlike the
+  pipeline-level `enabled`, these can't adopt the server value when omitted:
+  they sit inside set blocks, where a computed attribute would plan as
+  unknown on every element.)
+- `monad_alert_rule`: `invert_selection`, default `false`, refreshed on read.
+
 ### Fixed
 
 - **Re-sending an inline secret on a connector no longer fails with `409
@@ -33,7 +54,14 @@ breaking changes are released as minor version bumps.
   also use is refused until it is referenced by `{ id }`; the first successful
   apply writes the record. When an updated secret is also used by other
   components, the apply warns and names them. (ENG-11264)
-
+- **Applying a pipeline no longer silently re-enables nodes and edges
+  disabled in the UI, and applying an alert rule no longer resets
+  `invert_selection` (ENG-11404).** The update requests replace the whole node
+  and edge sets and the whole alert rule, and the provider did not model these
+  three fields, so it sent every node as enabled, every edge as not disabled,
+  and `invert_selection = false` on every apply. `plan` never showed the
+  change. An exclude-list alert rule edited by any apply therefore started
+  alerting on exactly the pipelines it was meant to skip.
 - **Documentation: the S3 examples on the `monad_input` and `monad_secret`
   pages now apply.** The inline-secret input example omitted `compression` and
   `partition_format`, and the secret-reference output example also omitted

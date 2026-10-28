@@ -43,6 +43,7 @@ type ResourcePipelineNode struct {
 	ComponentType types.String `tfsdk:"component_type"`
 	ComponentID   types.String `tfsdk:"component_id"`
 	Slug          types.String `tfsdk:"slug"`
+	Enabled       types.Bool   `tfsdk:"enabled"`
 }
 
 type ResourcePipelineEdge struct {
@@ -50,6 +51,7 @@ type ResourcePipelineEdge struct {
 	Description          types.String                     `tfsdk:"description"`
 	FromNodeInstanceSlug types.String                     `tfsdk:"from_node_instance_slug"`
 	ToNodeInstanceSlug   types.String                     `tfsdk:"to_node_instance_slug"`
+	Disabled             types.Bool                       `tfsdk:"disabled"`
 	Condition            ResourcePipelineCondition        `tfsdk:"condition"`
 	SchemaDetectionSpec  *ResourcePipelineSchemaDetection `tfsdk:"schema_detection_spec"`
 }
@@ -192,6 +194,17 @@ func (r *ResourcePipeline) Schema(
 							MarkdownDescription: "Slug for the node",
 							Optional:            true,
 						},
+						// Plain Optional, no Default and not Computed: inside a
+						// set-nested block a default is applied before elements are
+						// matched (see schema_detection_spec), and a Computed value
+						// would plan as unknown on every node every time, because
+						// UseStateForUnknown cannot follow a set element. Null means
+						// enabled; Read maps an API `true` back to null (ENG-11404).
+						"enabled": schema.BoolAttribute{
+							MarkdownDescription: "Whether the node is enabled. Omitted means enabled; " +
+								"set `false` to disable the node. Omit rather than writing `true`.",
+							Optional: true,
+						},
 					},
 				},
 			},
@@ -240,6 +253,13 @@ func (r *ResourcePipeline) Schema(
 						"to_node_instance_slug": schema.StringAttribute{
 							MarkdownDescription: "Slug of the target node instance",
 							Required:            true,
+						},
+						// Same shape as nodes.enabled: null means the API default
+						// (not disabled), and Read maps an API `false` to null.
+						"disabled": schema.BoolAttribute{
+							MarkdownDescription: "Whether the edge is disabled. Omitted means enabled; " +
+								"set `true` to stop records flowing along this edge. Omit rather than writing `false`.",
+							Optional: true,
 						},
 					},
 					Blocks: map[string]schema.Block{
@@ -376,7 +396,9 @@ func buildPipelineRequestNodes(nodes []ResourcePipelineNode) []monad.RoutesV2Pip
 			ComponentType: monad.ModelsComponentType(node.ComponentType.ValueString()),
 			ComponentId:   node.ComponentID.ValueString(),
 			Slug:          node.Slug.ValueStringPointer(),
-			Enabled:       monad.PtrBool(true),
+			// Always explicit: the API rebuilds every node from the request, so
+			// an omitted value would re-enable a node disabled elsewhere.
+			Enabled: monad.PtrBool(nodeEnabled(node.Enabled)),
 		}
 	}
 	return out
@@ -390,6 +412,7 @@ func buildPipelineRequestEdges(ctx context.Context, edges []ResourcePipelineEdge
 			Description:        edge.Description.ValueStringPointer(),
 			FromNodeInstanceId: edge.FromNodeInstanceSlug.ValueString(),
 			ToNodeInstanceId:   edge.ToNodeInstanceSlug.ValueString(),
+			Disabled:           monad.PtrBool(edge.Disabled.ValueBool()),
 			Conditions: &monad.ModelsConditionEvaluatable{
 				Operator: (*monad.ModelsConditionOperator)(edge.Condition.Operator.ValueStringPointer()),
 			},
@@ -597,10 +620,17 @@ func buildPipelineStateNodes(pipeline *monad.ModelsPipelineConfigV2) []ResourceP
 		if node.Slug != nil {
 			slug = types.StringValue(*node.Slug)
 		}
+		// A node is enabled unless the API says otherwise, so only a `false`
+		// is carried into state; enabled maps to null, the omitted shape.
+		enabled := types.BoolNull()
+		if node.Enabled != nil && !*node.Enabled {
+			enabled = types.BoolValue(false)
+		}
 		nodes[i] = ResourcePipelineNode{
 			ComponentType: types.StringPointerValue((*string)(node.ComponentType)),
 			ComponentID:   types.StringPointerValue(node.ComponentId),
 			Slug:          slug,
+			Enabled:       enabled,
 		}
 	}
 	return nodes
@@ -645,11 +675,17 @@ func buildPipelineStateEdges(pipeline *monad.ModelsPipelineConfigV2) []ResourceP
 			toSlug = getSlugForNodeID(pipeline.Nodes, *edge.ToNodeInstanceId)
 		}
 
+		disabled := types.BoolNull()
+		if edge.Disabled != nil && *edge.Disabled {
+			disabled = types.BoolValue(true)
+		}
+
 		edges[i] = ResourcePipelineEdge{
 			Name:                 name,
 			Description:          description,
 			FromNodeInstanceSlug: types.StringValue(fromSlug),
 			ToNodeInstanceSlug:   types.StringValue(toSlug),
+			Disabled:             disabled,
 			Condition: ResourcePipelineCondition{
 				Operator:   operator,
 				Conditions: conditions,
@@ -708,6 +744,12 @@ func schemaDetectionComparable(spec *ResourcePipelineSchemaDetection) map[string
 		"enabled":          spec.Enabled.ValueBool(),
 		"disable_alerting": spec.DisableAlerting.ValueBool(),
 	}
+}
+
+// nodeEnabled resolves the node `enabled` attribute to the value sent to the
+// API: omitted (null) means enabled.
+func nodeEnabled(v types.Bool) bool {
+	return v.IsNull() || v.IsUnknown() || v.ValueBool()
 }
 
 func getSlugForNodeID(nodes []monad.ModelsPipelineNode, nodeID string) string {
@@ -817,6 +859,9 @@ func pipelineNodesComparable(nodes []ResourcePipelineNode) []any {
 			"component_type": stringOrNil(n.ComponentType),
 			"component_id":   stringOrNil(n.ComponentID),
 			"slug":           stringOrNil(n.Slug),
+			// Compared as the effective setting so an explicit `true` in
+			// config and the API's default read back as null are equal.
+			"enabled": nodeEnabled(n.Enabled),
 		}
 	}
 	return out
@@ -850,6 +895,7 @@ func pipelineEdgesComparable(edges []ResourcePipelineEdge) []any {
 			"description":      stringOrNil(e.Description),
 			"from":             stringOrNil(e.FromNodeInstanceSlug),
 			"to":               stringOrNil(e.ToNodeInstanceSlug),
+			"disabled":         e.Disabled.ValueBool(),
 			"operator":         stringOrNil(e.Condition.Operator),
 			"conditions":       conditions,
 			"schema_detection": schemaDetectionComparable(e.SchemaDetectionSpec),

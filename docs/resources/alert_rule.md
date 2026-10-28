@@ -152,6 +152,7 @@ The following arguments are optional:
 * `description` - (Optional) Free-text description.
 * `active` - (Optional) Whether the rule is evaluated. Defaults to `true`; an inactive rule keeps its configuration but never fires.
 * `pipeline_ids` - (Optional) Set of pipeline IDs the rule watches, usually `monad_pipeline.x.id`. Omitted or empty, a pipeline-scoped rule watches **every** pipeline in the organization.
+* `invert_selection` - (Optional) Read `pipeline_ids` as an exclude-list: the rule watches every pipeline **except** those listed. Defaults to `false`. Empty `pipeline_ids` still means every pipeline either way. Only pipeline-scoped rule types consult it.
 * `timeouts` - (Optional) Operation timeouts for this resource. [See below](#timeouts).
 
 ### `rule_config` Argument
@@ -223,6 +224,7 @@ This resource exports the following attributes in addition to the arguments abov
 | `severity` | Input | |
 | `active` | Input and output | Optional; defaults to `true` and adopts the server value on import |
 | `pipeline_ids` | Input | Set; omitted and empty are equivalent |
+| `invert_selection` | Input and output | Optional; defaults to `false` and is refreshed on read, so a UI change shows as drift |
 | `rule_config` | Input | Refreshed from the API on read; compared semantically, server-injected keys masked |
 | `timeouts` | Input | Provider-side deadlines; never sent to the API |
 | `id` | Output | |
