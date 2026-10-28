@@ -11,6 +11,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+
+	monad "github.com/monad-inc/sdk/go"
 )
 
 type ResourceConnectorModel struct {
@@ -20,6 +22,16 @@ type ResourceConnectorModel struct {
 	Description   types.String             `tfsdk:"description"`
 	ComponentType types.String             `tfsdk:"type"`
 	Config        *ResourceConnectorConfig `tfsdk:"config"`
+	CreatedAt     types.String             `tfsdk:"created_at"`
+	UpdatedAt     types.String             `tfsdk:"updated_at"`
+	ManagedBy     types.String             `tfsdk:"managed_by"`
+}
+
+// setComputedMeta copies the API's bookkeeping fields into the model.
+func (m *ResourceConnectorModel) setComputedMeta(createdAt, updatedAt string, managedBy *monad.ModelsManagedBy) {
+	m.CreatedAt = metaString(createdAt)
+	m.UpdatedAt = metaString(updatedAt)
+	m.ManagedBy = managedByString(managedBy)
 }
 
 type ResourceConnectorConfig struct {
@@ -54,7 +66,7 @@ func (m *ResourceConnectorModel) getSettingsAndSecrets() (map[string]any, map[st
 }
 
 func getConnectorSchema(ctx context.Context) schema.Schema {
-	return schema.Schema{
+	s := schema.Schema{
 		MarkdownDescription: "Monad Connector",
 
 		Attributes: map[string]schema.Attribute{
@@ -116,6 +128,8 @@ func getConnectorSchema(ctx context.Context) schema.Schema {
 			},
 		},
 	}
+	withComputedMeta(s.Attributes, true)
+	return s
 }
 
 // finalizeConnectorSecrets prepares the connector config for state after a
@@ -214,7 +228,7 @@ func modifyConnectorPlanForSecrets(ctx context.Context, orgID string, req resour
 	// this, the stored hash would be kept and Update's recomputed hash would
 	// be an inconsistent result.
 	if tv, err := secretsDyn.ToTerraformValue(ctx); err == nil && !tv.IsFullyKnown() {
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, hashPath, types.StringUnknown())...)
+		resp.Diagnostics.Append(planWriteOnlyChange(ctx, &resp.Plan, hashPath)...)
 		return
 	}
 
@@ -260,6 +274,6 @@ func modifyConnectorPlanForSecrets(ctx context.Context, orgID string, req resour
 	}
 
 	if newHash != current {
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, hashPath, types.StringUnknown())...)
+		resp.Diagnostics.Append(planWriteOnlyChange(ctx, &resp.Plan, hashPath)...)
 	}
 }

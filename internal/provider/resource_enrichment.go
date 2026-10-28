@@ -131,6 +131,7 @@ func (r *ResourceEnrichment) Schema(
 			},
 		},
 	}
+	withComputedMeta(resp.Schema.Attributes, true)
 }
 
 func (r *ResourceEnrichment) Create(
@@ -196,6 +197,7 @@ func (r *ResourceEnrichment) Create(
 	// produced inconsistent result after apply"). Secrets are write-only, so
 	// they are nulled in state and fingerprinted into secrets_hash.
 	data.ID = types.StringValue(createdID)
+	data.setComputedMeta(enrichment.GetCreatedAt(), enrichment.GetUpdatedAt(), enrichment.ManagedBy)
 	if err := finalizeConnectorSecrets(ctx, r.client.OrganizationID, &data, secrets); err != nil {
 		resp.Diagnostics.AddError("Failed to fingerprint enrichment secrets", err.Error())
 		return
@@ -260,6 +262,7 @@ func (r *ResourceEnrichment) Read(
 	data.Name = types.StringValue(*enrichment.Name)
 	data.Description = description
 	data.ComponentType = types.StringValue(*enrichment.Type)
+	data.setComputedMeta(enrichment.GetCreatedAt(), enrichment.GetUpdatedAt(), enrichment.ManagedBy)
 	if err := refreshConnectorSettings(&data, enrichment.Config.Settings); err != nil {
 		resp.Diagnostics.AddError("Failed to refresh enrichment settings", err.Error())
 		return
@@ -339,7 +342,7 @@ func (r *ResourceEnrichment) Update(
 		},
 	}
 
-	_, monadResp, err := r.client.OrganizationEnrichmentsAPI.
+	updated, monadResp, err := r.client.OrganizationEnrichmentsAPI.
 		ReplaceEnrichment(
 			ctx,
 			r.client.OrganizationID,
@@ -365,6 +368,10 @@ func (r *ResourceEnrichment) Update(
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	// updated_at is computed and planned unknown on any change; take it (and
+	// the other bookkeeping fields) from the response.
+	data.setComputedMeta(updated.GetCreatedAt(), updated.GetUpdatedAt(), updated.ManagedBy)
 
 	// Preserve plan-known values (see Create); data already holds
 	// id/name/description/type/settings from the plan. Secrets stay write-only

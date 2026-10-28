@@ -8,6 +8,16 @@ breaking changes are released as minor version bumps.
 
 ### Added
 
+- **Read-only `created_at`, `updated_at` and `managed_by` on every resource
+  (ENG-11406)** — the API's bookkeeping fields, populated on create, read and
+  import (`monad_secret`, `monad_sso_connection` and `monad_api_key` have no
+  `managed_by`).
+  `updated_at` shows as `(known after apply)` whenever a resource has other
+  changes, including a change to a write-only secret alone (rotating a
+  `monad_secret` value or a connector's `config.secrets`, or the first apply
+  after importing a connector with secrets), because every write moves it;
+  the other two keep their value.
+  Existing state fills them in on the next refresh without a diff.
 - **`monad_sso_connection` resource.** Manages a SAML SSO connection: `name`,
   `description`, `email_domains`, `public_name`, `session_timeout_minutes`
   and a `saml` block (`entity_id`, `metadata_url`). The connection holds no
@@ -35,6 +45,14 @@ breaking changes are released as minor version bumps.
   type_id`. The API caps conditions at three levels (edge operator, group,
   rules), so a group holds rules, not other groups. Additive: existing
   configurations and state are unchanged.
+- **`monad_api_key` resource (PRO-713).** Create, rename, rotate, import and
+  delete organization API keys. The token is returned by the API only at
+  create and regenerate, so it is a sensitive attribute stored in state.
+  Changing `expiration_time` regenerates the key in place (same id, new token,
+  old token revoked); changing `role_id` replaces it. An `expiration_time`
+  known only at apply, such as one derived from `time_rotating`, plans the
+  token as known after apply. A create that times out and is adopted is
+  regenerated immediately so state holds a usable token.
 
 ### Fixed
 

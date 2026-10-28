@@ -131,6 +131,7 @@ func (r *ResourceInput) Create(
 	// produced inconsistent result after apply"). Secrets are write-only, so
 	// they are nulled in state and fingerprinted into secrets_hash.
 	data.ID = types.StringValue(createdID)
+	data.setComputedMeta(input.GetCreatedAt(), input.GetUpdatedAt(), input.ManagedBy)
 	if err := finalizeConnectorSecrets(ctx, r.client.OrganizationID, &data, secrets); err != nil {
 		resp.Diagnostics.AddError("Failed to fingerprint input secrets", err.Error())
 		return
@@ -195,6 +196,7 @@ func (r *ResourceInput) Read(
 	data.Name = types.StringValue(*input.Name)
 	data.Description = description
 	data.ComponentType = types.StringValue(*input.Type)
+	data.setComputedMeta(input.GetCreatedAt(), input.GetUpdatedAt(), input.ManagedBy)
 	if err := refreshConnectorSettings(&data, input.Config.Settings); err != nil {
 		resp.Diagnostics.AddError("Failed to refresh input settings", err.Error())
 		return
@@ -274,7 +276,7 @@ func (r *ResourceInput) Update(
 		},
 	}
 
-	_, monadResp, err := r.client.OrganizationInputsAPI.
+	updated, monadResp, err := r.client.OrganizationInputsAPI.
 		ReplaceInput(
 			ctx,
 			r.client.OrganizationID,
@@ -300,6 +302,10 @@ func (r *ResourceInput) Update(
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	// updated_at is computed and planned unknown on any change; take it (and
+	// the other bookkeeping fields) from the response.
+	data.setComputedMeta(updated.GetCreatedAt(), updated.GetUpdatedAt(), updated.ManagedBy)
 
 	// Preserve plan-known values (see Create); data already holds
 	// id/name/description/type/settings from the plan. Secrets stay write-only

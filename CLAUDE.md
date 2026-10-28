@@ -13,7 +13,8 @@ A Terraform provider for [Monad](https://monad.com), built on the
 API via the generated Go SDK `github.com/monad-inc/sdk/go`.
 
 - Resources: `monad_input`, `monad_output`, `monad_enrichment`,
-  `monad_transform`, `monad_pipeline`, `monad_secret`, `monad_sso_connection`.
+  `monad_transform`, `monad_pipeline`, `monad_secret`, `monad_alert_rule`,
+  `monad_sso_connection`, `monad_api_key`.
 - `input`/`output`/`enrichment`/`transform` share `resource_connector.go`
   (schema, Create/Update/Read helpers, the secrets/hash machinery).
 - Conversion + reconciliation helpers live in `utils.go`; their unit tests are

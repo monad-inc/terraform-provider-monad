@@ -53,6 +53,8 @@ type ResourceSSOConnection struct {
 
 type ResourceSSOConnectionModel struct {
 	Timeouts              timeouts.Value          `tfsdk:"timeouts"`
+	CreatedAt             types.String            `tfsdk:"created_at"`
+	UpdatedAt             types.String            `tfsdk:"updated_at"`
 	ID                    types.String            `tfsdk:"id"`
 	Name                  types.String            `tfsdk:"name"`
 	Description           types.String            `tfsdk:"description"`
@@ -170,6 +172,7 @@ func (r *ResourceSSOConnection) Schema(ctx context.Context, req resource.SchemaR
 			},
 		},
 	}
+	withComputedMeta(resp.Schema.Attributes, false)
 }
 
 // ValidateConfig applies the API's field rules at plan time.
@@ -312,8 +315,10 @@ func (r *ResourceSSOConnection) Create(ctx context.Context, req resource.CreateR
 }
 
 // setSSOComputed fills the values the API decided: those the plan left
-// unknown because config omitted them.
+// unknown because config omitted them, and the bookkeeping timestamps.
 func setSSOComputed(data *ResourceSSOConnectionModel, conn *monad.ModelsConnection) {
+	data.CreatedAt = metaString(conn.GetCreatedAt())
+	data.UpdatedAt = metaString(conn.GetUpdatedAt())
 	if data.PublicName.IsUnknown() {
 		data.PublicName = types.StringValue(conn.GetPublicName())
 	}
@@ -383,6 +388,8 @@ func (r *ResourceSSOConnection) Read(ctx context.Context, req resource.ReadReque
 		EntityID:    types.StringValue(conn.GetSamlEntityId()),
 		MetadataURL: types.StringValue(conn.GetSamlMetadataUrl()),
 	}
+	data.CreatedAt = metaString(conn.GetCreatedAt())
+	data.UpdatedAt = metaString(conn.GetUpdatedAt())
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
