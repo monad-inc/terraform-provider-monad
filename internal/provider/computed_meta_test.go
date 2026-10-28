@@ -37,8 +37,9 @@ func TestComputedMetaOnEveryResource(t *testing.T) {
 			assert.True(t, updated.Computed)
 			assert.Empty(t, updated.PlanModifiers, "updated_at must be unknown on change, never kept")
 
-			// The API's secret and connection models have no managed_by.
-			noManagedBy := meta.TypeName == "monad_secret" || meta.TypeName == "monad_sso_connection"
+			// The API's secret, connection and API key models have no managed_by.
+			noManagedBy := meta.TypeName == "monad_secret" || meta.TypeName == "monad_sso_connection" ||
+				meta.TypeName == "monad_api_key"
 			_, hasManagedBy := s.Schema.Attributes["managed_by"]
 			assert.Equal(t, !noManagedBy, hasManagedBy, "managed_by only where the API model has it")
 		})
