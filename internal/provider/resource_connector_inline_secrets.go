@@ -19,7 +19,9 @@ type storedSecretsFunc func(ctx context.Context) (map[string]any, *http.Response
 
 // secretsForUpdate returns the secrets to send on a connector update: the
 // configured ones, with inline secrets reused in place where possible (see
-// reuseInlineSecretsInPlace). The component is only read when an inline
+// reuseInlineSecretsInPlace), plus the in-place secret updates that reuse
+// needs. The caller applies those with applyInPlaceSecretUpdates only after
+// the component update succeeds. The component is only read when an inline
 // secret is configured.
 //
 // secretsChanged reports whether the configured secrets differ from the last
@@ -35,9 +37,9 @@ func secretsForUpdate(
 	configured map[string]any,
 	secretsChanged bool,
 	readStored storedSecretsFunc,
-) (map[string]any, diag.Diagnostics) {
+) (map[string]any, []inPlaceSecretUpdate, diag.Diagnostics) {
 	if !hasInlineSecrets(configured) {
-		return configured, nil
+		return configured, nil, nil
 	}
 
 	stored, httpResp, err := readStored(ctx)
@@ -47,10 +49,10 @@ func secretsForUpdate(
 			"Unable to read %s before update, got error: %s. Response: %s",
 			kind, err, getResponseBody(httpResp),
 		))
-		return nil, diags
+		return nil, nil, diags
 	}
 	if !secretsChanged {
-		return referenceStoredSecrets(configured, stored), nil
+		return referenceStoredSecrets(configured, stored), nil, nil
 	}
 	return reuseInlineSecretsInPlace(ctx, c, configured, stored, selfID)
 }
@@ -86,10 +88,11 @@ func referenceStoredSecrets(configured, stored map[string]any) map[string]any {
 //
 // reuseInlineSecretsInPlace rewrites the secrets about to be sent on update:
 // an inline secret whose name matches the secret that slot already references
-// updates that secret in place (value and description) and is sent as an
-// { id } reference. Anything else is sent unchanged, so a new name still
-// creates a new secret and a name owned by an unrelated secret still gets the
-// API's 409 rather than being overwritten.
+// is sent as an { id } reference, and an update of that secret (value and
+// description) is returned for the caller to apply once the component update
+// has succeeded. Anything else is sent unchanged, so a new name still creates
+// a new secret and a name owned by an unrelated secret still gets the API's
+// 409 rather than being overwritten.
 //
 // configured is never modified; the caller hashes it for rotation detection.
 // stored is the component's current config.secrets as the API returns it
@@ -100,10 +103,11 @@ func reuseInlineSecretsInPlace(
 	c *client.Client,
 	configured, stored map[string]any,
 	selfID string,
-) (map[string]any, diag.Diagnostics) {
+) (map[string]any, []inPlaceSecretUpdate, diag.Diagnostics) {
 	var diags diag.Diagnostics
-	out := reuseInlineSecretsAt(ctx, c, configured, stored, selfID, path.Root("config").AtName("secrets"), &diags)
-	return out, diags
+	var updates []inPlaceSecretUpdate
+	out := reuseInlineSecretsAt(ctx, c, configured, stored, selfID, path.Root("config").AtName("secrets"), &updates, &diags)
+	return out, updates, diags
 }
 
 func reuseInlineSecretsAt(
@@ -112,6 +116,7 @@ func reuseInlineSecretsAt(
 	configured, stored map[string]any,
 	selfID string,
 	at path.Path,
+	updates *[]inPlaceSecretUpdate,
 	diags *diag.Diagnostics,
 ) map[string]any {
 	out := make(map[string]any, len(configured))
@@ -125,8 +130,9 @@ func reuseInlineSecretsAt(
 			if storedID == "" {
 				continue
 			}
-			if id, reused := updateReferencedSecret(ctx, c, secret, storedID, selfID, slotPath, diags); reused {
-				out[key] = map[string]any{"id": id}
+			if update, reused := matchReferencedSecret(ctx, c, secret, storedID, selfID, slotPath, diags); reused {
+				out[key] = map[string]any{"id": storedID}
+				*updates = append(*updates, update)
 			}
 			continue
 		}
@@ -134,7 +140,7 @@ func reuseInlineSecretsAt(
 		// One level of nested slots (a map of secrets), as the API allows.
 		if nested, ok := value.(map[string]any); ok && !isSecretRef(nested) {
 			storedNested, _ := storedValue.(map[string]any)
-			out[key] = reuseInlineSecretsAt(ctx, c, nested, storedNested, selfID, slotPath, diags)
+			out[key] = reuseInlineSecretsAt(ctx, c, nested, storedNested, selfID, slotPath, updates, diags)
 			continue
 		}
 
@@ -143,61 +149,94 @@ func reuseInlineSecretsAt(
 	return out
 }
 
-// updateReferencedSecret updates the secret the slot already references when
-// its name matches the configured inline secret, and reports whether the slot
-// can be sent as a reference to it.
-func updateReferencedSecret(
+// inPlaceSecretUpdate is a pending update of a secret a slot already
+// references, deferred until the component update has succeeded.
+type inPlaceSecretUpdate struct {
+	slotPath path.Path
+	id       string
+	want     inlineSecretValue
+	// others names the other components using the secret, for the warning.
+	others []string
+}
+
+// matchReferencedSecret reads the secret the slot already references and,
+// when its name matches the configured inline secret, returns the update that
+// reuses it in place and reports that the slot can be sent as a reference.
+func matchReferencedSecret(
 	ctx context.Context,
 	c *client.Client,
 	want inlineSecretValue,
 	storedID, selfID string,
 	slotPath path.Path,
 	diags *diag.Diagnostics,
-) (string, bool) {
+) (inPlaceSecretUpdate, bool) {
 	current, httpResp, err := c.SecretsAPI.GetSecret(ctx, c.OrganizationID, storedID).Execute()
 	if err != nil {
 		body := getResponseBody(httpResp)
 		if isNotFoundResponse(httpResp, body) {
 			// The referenced secret is gone; let the API create the inline one.
-			return "", false
+			return inPlaceSecretUpdate{}, false
 		}
 		diags.AddAttributeError(slotPath, "Client Error", fmt.Sprintf(
 			"Unable to read secret %s currently referenced by this slot, got error: %s. Response: %s",
 			storedID, err, body,
 		))
-		return "", false
+		return inPlaceSecretUpdate{}, false
 	}
 
 	if current.GetName() != want.name {
 		// A renamed inline secret is a new secret; the API creates it.
-		return "", false
+		return inPlaceSecretUpdate{}, false
 	}
 
-	request := monad.RoutesV2CreateOrUpdateSecretRequest{
-		Name:        &want.name,
-		Description: &want.description,
-		Value:       &want.value,
-	}
-	_, httpResp, err = c.SecretsAPI.
-		UpdateSecret(ctx, c.OrganizationID, storedID).
-		CreateSecretRequest(monad.RoutesV2CreateOrUpdateSecretRequestAsCreateSecretRequest(&request)).
-		Execute()
-	if err != nil {
-		diags.AddAttributeError(slotPath, "Client Error", fmt.Sprintf(
-			"Unable to update secret %q (%s) in place, got error: %s. Response: %s",
-			want.name, storedID, err, getResponseBody(httpResp),
-		))
-		return "", false
-	}
+	return inPlaceSecretUpdate{
+		slotPath: slotPath,
+		id:       storedID,
+		want:     want,
+		others:   otherSecretUsers(current, selfID),
+	}, true
+}
 
-	if others := otherSecretUsers(current, selfID); len(others) > 0 {
-		diags.AddAttributeWarning(slotPath, "Shared secret updated", fmt.Sprintf(
-			"Secret %q is also used by %s. Its value and description were updated in place, "+
-				"so those components now use the configured value too.",
-			want.name, strings.Join(others, ", "),
-		))
+// applyInPlaceSecretUpdates writes the updates reuseInlineSecretsInPlace
+// deferred. The caller runs it only after the component update succeeds, so a
+// rejected component update never changes a secret. If a secret update fails
+// here, Update returns the error without saving state; the next plan shows the
+// same change and the retry re-sends the same values.
+func applyInPlaceSecretUpdates(
+	ctx context.Context,
+	c *client.Client,
+	kind string,
+	updates []inPlaceSecretUpdate,
+) diag.Diagnostics {
+	var diags diag.Diagnostics
+	for _, u := range updates {
+		request := monad.RoutesV2CreateOrUpdateSecretRequest{
+			Name:        &u.want.name,
+			Description: &u.want.description,
+			Value:       &u.want.value,
+		}
+		_, httpResp, err := c.SecretsAPI.
+			UpdateSecret(ctx, c.OrganizationID, u.id).
+			CreateSecretRequest(monad.RoutesV2CreateOrUpdateSecretRequestAsCreateSecretRequest(&request)).
+			Execute()
+		if err != nil {
+			diags.AddAttributeError(u.slotPath, "Client Error", fmt.Sprintf(
+				"The %s was updated, but updating secret %q (%s) in place failed, got error: %s. Response: %s. "+
+					"Run apply again to retry; other secrets in this update may already hold their new value.",
+				kind, u.want.name, u.id, err, getResponseBody(httpResp),
+			))
+			return diags
+		}
+
+		if len(u.others) > 0 {
+			diags.AddAttributeWarning(u.slotPath, "Shared secret updated", fmt.Sprintf(
+				"Secret %q is also used by %s. Its value and description were updated in place, "+
+					"so those components now use the configured value too.",
+				u.want.name, strings.Join(u.others, ", "),
+			))
+		}
 	}
-	return storedID, true
+	return diags
 }
 
 type inlineSecretValue struct {

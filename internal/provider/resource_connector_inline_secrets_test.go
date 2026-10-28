@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -94,6 +95,19 @@ func ref(id string) map[string]any { return map[string]any{"id": id} }
 
 const selfID = "input-self"
 
+// reuseAndApply runs both halves of an in-place reuse the way Update does,
+// with the component update between them assumed to have succeeded.
+func reuseAndApply(
+	ctx context.Context, c *client.Client, configured, stored map[string]any, selfID string,
+) (map[string]any, diag.Diagnostics) {
+	out, updates, diags := reuseInlineSecretsInPlace(ctx, c, configured, stored, selfID)
+	if diags.HasError() {
+		return out, diags
+	}
+	diags.Append(applyInPlaceSecretUpdates(ctx, c, "input", updates)...)
+	return out, diags
+}
+
 func TestReuseInlineSecretsInPlace(t *testing.T) {
 	ctx := context.Background()
 
@@ -102,7 +116,7 @@ func TestReuseInlineSecretsInPlace(t *testing.T) {
 		f.add("sec-1", "archive-ak", map[string]any{"id": selfID, "name": "me"})
 
 		configured := map[string]any{"access_key": inline("archive-ak", "AKIANEW", "reader key")}
-		got, diags := reuseInlineSecretsInPlace(ctx, f.client(), configured,
+		got, diags := reuseAndApply(ctx, f.client(), configured,
 			map[string]any{"access_key": ref("sec-1")}, selfID)
 
 		require.False(t, diags.HasError(), "%v", diags)
@@ -116,12 +130,27 @@ func TestReuseInlineSecretsInPlace(t *testing.T) {
 			"configured secrets must not be modified; they are hashed")
 	})
 
+	t.Run("the secret write is deferred to the caller", func(t *testing.T) {
+		f := newFakeSecretsServer(t)
+		f.add("sec-1", "archive-ak", map[string]any{"id": selfID})
+
+		got, updates, diags := reuseInlineSecretsInPlace(ctx, f.client(),
+			map[string]any{"access_key": inline("archive-ak", "AKIANEW", "reader key")},
+			map[string]any{"access_key": ref("sec-1")}, selfID)
+
+		require.False(t, diags.HasError(), "%v", diags)
+		assert.Equal(t, ref("sec-1"), got["access_key"])
+		assert.Empty(t, f.updates, "nothing is written before the component update succeeds")
+		require.Len(t, updates, 1)
+		assert.Equal(t, "sec-1", updates[0].id)
+	})
+
 	t.Run("renamed secret is sent inline so the API creates it", func(t *testing.T) {
 		f := newFakeSecretsServer(t)
 		f.add("sec-1", "archive-ak-v1")
 
 		want := inline("archive-ak-v2", "AKIANEW", "reader key")
-		got, diags := reuseInlineSecretsInPlace(ctx, f.client(),
+		got, diags := reuseAndApply(ctx, f.client(),
 			map[string]any{"access_key": want}, map[string]any{"access_key": ref("sec-1")}, selfID)
 
 		require.False(t, diags.HasError(), "%v", diags)
@@ -133,7 +162,7 @@ func TestReuseInlineSecretsInPlace(t *testing.T) {
 		f := newFakeSecretsServer(t)
 
 		want := inline("new-key", "v", "d")
-		got, diags := reuseInlineSecretsInPlace(ctx, f.client(),
+		got, diags := reuseAndApply(ctx, f.client(),
 			map[string]any{"access_key": want}, map[string]any{}, selfID)
 
 		require.False(t, diags.HasError(), "%v", diags)
@@ -145,7 +174,7 @@ func TestReuseInlineSecretsInPlace(t *testing.T) {
 		f := newFakeSecretsServer(t)
 
 		want := inline("archive-ak", "v", "d")
-		got, diags := reuseInlineSecretsInPlace(ctx, f.client(),
+		got, diags := reuseAndApply(ctx, f.client(),
 			map[string]any{"access_key": want}, map[string]any{"access_key": ref("gone")}, selfID)
 
 		require.False(t, diags.HasError(), "%v", diags)
@@ -161,7 +190,7 @@ func TestReuseInlineSecretsInPlace(t *testing.T) {
 			"secret_key": ref("sec-ref"),
 			"auth":       map[string]any{"token": inline("nested-key", "v", "d")},
 		}
-		got, diags := reuseInlineSecretsInPlace(ctx, f.client(), configured, map[string]any{
+		got, diags := reuseAndApply(ctx, f.client(), configured, map[string]any{
 			"secret_key": ref("sec-ref"),
 			"auth":       map[string]any{"token": ref("sec-n")},
 		}, selfID)
@@ -179,7 +208,7 @@ func TestReuseInlineSecretsInPlace(t *testing.T) {
 			map[string]any{"id": selfID, "name": "me"},
 			map[string]any{"id": "input-other", "name": "Other input"})
 
-		_, diags := reuseInlineSecretsInPlace(ctx, f.client(),
+		_, diags := reuseAndApply(ctx, f.client(),
 			map[string]any{"access_key": inline("shared-key", "v", "d")},
 			map[string]any{"access_key": ref("sec-1")}, selfID)
 
@@ -194,7 +223,7 @@ func TestReuseInlineSecretsInPlace(t *testing.T) {
 		f.add("sec-1", "archive-ak")
 		f.failGet = true
 
-		_, diags := reuseInlineSecretsInPlace(ctx, f.client(),
+		_, diags := reuseAndApply(ctx, f.client(),
 			map[string]any{"access_key": inline("archive-ak", "v", "d")},
 			map[string]any{"access_key": ref("sec-1")}, selfID)
 
@@ -207,12 +236,12 @@ func TestReuseInlineSecretsInPlace(t *testing.T) {
 		f.add("sec-1", "archive-ak")
 		f.failPut = true
 
-		_, diags := reuseInlineSecretsInPlace(ctx, f.client(),
+		_, diags := reuseAndApply(ctx, f.client(),
 			map[string]any{"access_key": inline("archive-ak", "v", "d")},
 			map[string]any{"access_key": ref("sec-1")}, selfID)
 
 		require.True(t, diags.HasError())
-		assert.Contains(t, diags.Errors()[0].Detail(), `Unable to update secret "archive-ak"`)
+		assert.Contains(t, diags.Errors()[0].Detail(), `The input was updated, but updating secret "archive-ak"`)
 	})
 }
 
@@ -221,7 +250,7 @@ func TestSecretsForUpdate(t *testing.T) {
 
 	t.Run("no inline secrets skips the component read", func(t *testing.T) {
 		configured := map[string]any{"secret_key": ref("sec-ref")}
-		got, diags := secretsForUpdate(ctx, nil, "input", selfID, configured, true,
+		got, _, diags := secretsForUpdate(ctx, nil, "input", selfID, configured, true,
 			func(context.Context) (map[string]any, *http.Response, error) {
 				t.Fatal("component read when no inline secret is configured")
 				return nil, nil, nil
@@ -231,7 +260,7 @@ func TestSecretsForUpdate(t *testing.T) {
 	})
 
 	t.Run("component read error surfaces", func(t *testing.T) {
-		_, diags := secretsForUpdate(ctx, nil, "input", selfID,
+		_, _, diags := secretsForUpdate(ctx, nil, "input", selfID,
 			map[string]any{"access_key": inline("k", "v", "d")}, true,
 			func(context.Context) (map[string]any, *http.Response, error) {
 				return nil, nil, errors.New("connection refused")
@@ -256,7 +285,7 @@ func TestSecretsForUpdate(t *testing.T) {
 			"secret_key": ref("sec-ref"),
 			"auth":       map[string]any{"token": inline("nested-key", "v", "d")},
 		}
-		got, diags := secretsForUpdate(ctx, f.client(), "input", selfID, configured, false,
+		got, _, diags := secretsForUpdate(ctx, f.client(), "input", selfID, configured, false,
 			stored(map[string]any{
 				"access_key": ref("sec-1"),
 				"secret_key": ref("sec-ref"),
@@ -280,7 +309,7 @@ func TestSecretsForUpdate(t *testing.T) {
 		f := newFakeSecretsServer(t)
 
 		want := inline("archive-ak", "v", "d")
-		got, diags := secretsForUpdate(ctx, f.client(), "input", selfID,
+		got, _, diags := secretsForUpdate(ctx, f.client(), "input", selfID,
 			map[string]any{"access_key": want}, false, stored(map[string]any{}))
 
 		require.False(t, diags.HasError(), "%v", diags)
@@ -292,14 +321,15 @@ func TestSecretsForUpdate(t *testing.T) {
 		f := newFakeSecretsServer(t)
 		f.add("sec-1", "archive-ak", map[string]any{"id": selfID})
 
-		got, diags := secretsForUpdate(ctx, f.client(), "input", selfID,
+		got, updates, diags := secretsForUpdate(ctx, f.client(), "input", selfID,
 			map[string]any{"access_key": inline("archive-ak", "AKIANEW", "reader key")}, true,
 			stored(map[string]any{"access_key": ref("sec-1")}))
 
 		require.False(t, diags.HasError(), "%v", diags)
 		assert.Equal(t, ref("sec-1"), got["access_key"])
-		require.Len(t, f.updates, 1)
-		assert.Equal(t, "sec-1", f.updates[0].ID)
+		assert.Empty(t, f.updates, "the write waits for applyInPlaceSecretUpdates")
+		require.Len(t, updates, 1)
+		assert.Equal(t, "sec-1", updates[0].id)
 	})
 }
 

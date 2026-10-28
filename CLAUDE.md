@@ -184,7 +184,9 @@ never echoes raw secrets (it returns references/ids). The pattern:
   slot already references when its name matches (ENG-11264). It writes a
   secret only when `connectorSecretsChanged` (the planned `secrets_hash` is
   unknown); otherwise every inline slot goes out as its stored `{ id }`, so an
-  unrelated change never re-sends a value. A new name still
+  unrelated change never re-sends a value. The secret write is deferred:
+  `applyInPlaceSecretUpdates` runs only after the component's Replace call
+  succeeds, so a rejected update never changes a secret. A new name still
   creates a new secret; a name owned by an unrelated secret still 409s. Hash
   the *configured* secrets, never the rewritten ones, or the next plan diffs.
 

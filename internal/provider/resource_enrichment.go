@@ -299,7 +299,7 @@ func (r *ResourceEnrichment) Update(
 	// Re-sending an inline secret under its existing name would 409; reuse the
 	// secret this enrichment already references instead (ENG-11264). The configured
 	// secrets are still what gets hashed.
-	sendSecrets, diags := secretsForUpdate(ctx, r.client, "enrichment", data.ID.ValueString(), secrets,
+	sendSecrets, secretUpdates, diags := secretsForUpdate(ctx, r.client, "enrichment", data.ID.ValueString(), secrets,
 		connectorSecretsChanged(&data),
 		func(ctx context.Context) (map[string]any, *http.Response, error) {
 			current, httpResp, err := r.client.OrganizationEnrichmentsAPI.
@@ -346,6 +346,13 @@ func (r *ResourceEnrichment) Update(
 				getResponseBody(monadResp),
 			),
 		)
+		return
+	}
+
+	// Only now that the component update has succeeded, update in place the
+	// secrets it reuses, so a rejected update never changes a secret.
+	resp.Diagnostics.Append(applyInPlaceSecretUpdates(ctx, r.client, "enrichment", secretUpdates)...)
+	if resp.Diagnostics.HasError() {
 		return
 	}
 

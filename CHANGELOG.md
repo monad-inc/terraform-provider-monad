@@ -19,7 +19,10 @@ breaking changes are released as minor version bumps.
   to it. The secret is only written when the configured secrets change: an
   apply that changes only other attributes sends the existing reference and
   leaves the secret untouched, so it never undoes a rotation made outside
-  Terraform. A new name still creates a new secret. A name that belongs to a secret
+  Terraform. The secret is updated only after the connector update succeeds,
+  so an update the API rejects leaves the secret unchanged; if the secret
+  update itself fails, the apply reports it and the next apply retries it. A
+  new name still creates a new secret. A name that belongs to a secret
   the component does not reference is still refused by the API, so an
   unrelated secret is never overwritten. When the updated secret is also used
   by other components, the apply warns and names them. (ENG-11264)
