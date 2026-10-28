@@ -1,9 +1,14 @@
 package provider
 
 import (
+	"context"
+
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	monad "github.com/monad-inc/sdk/go"
@@ -14,7 +19,9 @@ import (
 // keep their state value across plans; updated_at changes on every write, so
 // it is left without UseStateForUnknown and plans as "known after apply"
 // whenever the resource has other changes (keeping a stale value would make
-// the post-apply value inconsistent with the plan).
+// the post-apply value inconsistent with the plan). A change to a write-only
+// value alone is not such a change to the framework; planWriteOnlyChange
+// covers it.
 func computedMetaAttributes(withManagedBy bool) map[string]schema.Attribute {
 	attrs := map[string]schema.Attribute{
 		"created_at": schema.StringAttribute{
@@ -36,6 +43,18 @@ func computedMetaAttributes(withManagedBy bool) map[string]schema.Attribute {
 		}
 	}
 	return attrs
+}
+
+// planWriteOnlyChange plans an update for a change to a write-only value:
+// it marks the value's hash unknown, and updated_at with it. The framework
+// marks updated_at unknown only when the plan differs from state, and a
+// write-only value is null in both, so a change to it alone would otherwise
+// plan the old updated_at and fail as an inconsistent result once the API
+// bumps it.
+func planWriteOnlyChange(ctx context.Context, plan *tfsdk.Plan, hashPath path.Path) diag.Diagnostics {
+	diags := plan.SetAttribute(ctx, hashPath, types.StringUnknown())
+	diags.Append(plan.SetAttribute(ctx, path.Root("updated_at"), types.StringUnknown())...)
+	return diags
 }
 
 // withComputedMeta adds computedMetaAttributes to a schema's attributes.

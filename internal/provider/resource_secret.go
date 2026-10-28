@@ -351,7 +351,7 @@ func (r *ResourceSecret) ModifyPlan(
 	// A value not known until apply (e.g. derived from another resource) may
 	// or may not be a rotation; plan the update so Update can decide.
 	if value.IsUnknown() {
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, hashPath, types.StringUnknown())...)
+		resp.Diagnostics.Append(planWriteOnlyChange(ctx, &resp.Plan, hashPath)...)
 		return
 	}
 
@@ -362,7 +362,7 @@ func (r *ResourceSecret) ModifyPlan(
 	}
 
 	if r.computeValueHash(ctx, value.ValueString()) != stateHash.ValueString() {
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, hashPath, types.StringUnknown())...)
+		resp.Diagnostics.Append(planWriteOnlyChange(ctx, &resp.Plan, hashPath)...)
 	}
 }
 

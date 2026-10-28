@@ -219,7 +219,7 @@ func modifyConnectorPlanForSecrets(ctx context.Context, orgID string, req resour
 	// this, the stored hash would be kept and Update's recomputed hash would
 	// be an inconsistent result.
 	if tv, err := secretsDyn.ToTerraformValue(ctx); err == nil && !tv.IsFullyKnown() {
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, hashPath, types.StringUnknown())...)
+		resp.Diagnostics.Append(planWriteOnlyChange(ctx, &resp.Plan, hashPath)...)
 		return
 	}
 
@@ -265,6 +265,6 @@ func modifyConnectorPlanForSecrets(ctx context.Context, orgID string, req resour
 	}
 
 	if newHash != current {
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, hashPath, types.StringUnknown())...)
+		resp.Diagnostics.Append(planWriteOnlyChange(ctx, &resp.Plan, hashPath)...)
 	}
 }
