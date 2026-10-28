@@ -36,6 +36,8 @@ type ResourceRole struct {
 
 type ResourceRoleModel struct {
 	Timeouts    timeouts.Value `tfsdk:"timeouts"`
+	CreatedAt   types.String   `tfsdk:"created_at"`
+	UpdatedAt   types.String   `tfsdk:"updated_at"`
 	ID          types.String   `tfsdk:"id"`
 	Name        types.String   `tfsdk:"name"`
 	Description types.String   `tfsdk:"description"`
@@ -115,6 +117,8 @@ func (r *ResourceRole) Schema(
 			},
 		},
 	}
+	// The role model has created_at and updated_at but no managed_by.
+	withComputedMeta(resp.Schema.Attributes, false)
 }
 
 // ValidateConfig requires at least one permission. The update endpoint treats
@@ -231,8 +235,20 @@ func (r *ResourceRole) Create(
 		return
 	}
 
-	// Only the computed id is taken from the response (apply consistency).
+	// Only computed values are taken from the response (apply consistency).
 	data.ID = types.StringValue(createdID)
+	if err != nil {
+		// Adopted after a timeout: the response never arrived, so read the
+		// role for its timestamps. If that fails too, the next refresh fills
+		// them in.
+		role, _, err = r.client.RolesAPI.GetRole(parentCtx, r.client.OrganizationID, createdID).Execute()
+	}
+	data.CreatedAt = types.StringNull()
+	data.UpdatedAt = types.StringNull()
+	if err == nil {
+		data.CreatedAt = metaString(role.GetCreatedAt())
+		data.UpdatedAt = metaString(role.GetUpdatedAt())
+	}
 
 	tflog.Trace(ctx, "created a role resource")
 
@@ -278,6 +294,8 @@ func (r *ResourceRole) Read(
 	data.ID = types.StringValue(role.GetId())
 	data.Name = types.StringValue(role.GetName())
 	data.Description = reconcileOptionalString(data.Description, role.GetDescription())
+	data.CreatedAt = metaString(role.GetCreatedAt())
+	data.UpdatedAt = metaString(role.GetUpdatedAt())
 
 	// A set, so the API's order never reads as drift.
 	slugs := permissionSlugs(role.Permissions)
@@ -324,7 +342,7 @@ func (r *ResourceRole) Update(
 		PermissionIds: permissionIDs,
 	}
 
-	_, monadResp, err := r.client.RolesAPI.
+	updated, monadResp, err := r.client.RolesAPI.
 		UpdateRole(ctx, r.client.OrganizationID, data.ID.ValueString()).
 		UpdateRoleRequest(monad.RoutesV2UpdateRoleV2RequestAsUpdateRoleRequest(&request)).
 		Execute()
@@ -335,6 +353,8 @@ func (r *ResourceRole) Update(
 		)
 		return
 	}
+	data.CreatedAt = metaString(updated.GetCreatedAt())
+	data.UpdatedAt = metaString(updated.GetUpdatedAt())
 
 	tflog.Trace(ctx, "updated a role resource")
 

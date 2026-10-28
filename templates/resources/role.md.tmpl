@@ -37,6 +37,8 @@ The following arguments are optional:
 This resource exports the following attributes in addition to the arguments above:
 
 * `id` - UUID of the role. Use it as `monad_api_key.role_id`.
+* `created_at` - When the role was created, as an RFC 3339 timestamp set by the API.
+* `updated_at` - When the role was last changed. Shown as `(known after apply)` whenever the resource has other changes, because every write moves it.
 
 ### Inputs and outputs
 
@@ -47,6 +49,8 @@ This resource exports the following attributes in addition to the arguments abov
 | `permissions` | Input | Set of slugs; refreshed on read, so a permission added or removed outside Terraform shows as drift |
 | `timeouts` | Input | Provider-side deadlines; never sent to the API |
 | `id` | Output | |
+| `created_at` | Output | Set by the API |
+| `updated_at` | Output | Changes on every write |
 
 ## Timeouts
 

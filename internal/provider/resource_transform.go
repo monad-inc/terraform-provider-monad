@@ -31,6 +31,9 @@ type ResourceTransform struct {
 
 type ResourceTransformModel struct {
 	Timeouts    timeouts.Value `tfsdk:"timeouts"`
+	CreatedAt   types.String   `tfsdk:"created_at"`
+	UpdatedAt   types.String   `tfsdk:"updated_at"`
+	ManagedBy   types.String   `tfsdk:"managed_by"`
 	ID          types.String   `tfsdk:"id"`
 	Name        types.String   `tfsdk:"name"`
 	Description types.String   `tfsdk:"description"`
@@ -115,6 +118,7 @@ func (r *ResourceTransform) Schema(
 			},
 		},
 	}
+	withComputedMeta(resp.Schema.Attributes, true)
 }
 
 func (r *ResourceTransform) Create(
@@ -179,6 +183,10 @@ func (r *ResourceTransform) Create(
 	data.ID = types.StringValue(createdID)
 
 	tflog.Trace(ctx, "created a transform resource")
+
+	data.CreatedAt = metaString(transform.GetCreatedAt())
+	data.UpdatedAt = metaString(transform.GetUpdatedAt())
+	data.ManagedBy = managedByString(transform.ManagedBy)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -250,6 +258,10 @@ func (r *ResourceTransform) Read(
 	}
 	data.Config = config
 
+	data.CreatedAt = metaString(transform.GetCreatedAt())
+	data.UpdatedAt = metaString(transform.GetUpdatedAt())
+	data.ManagedBy = managedByString(transform.ManagedBy)
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -305,7 +317,7 @@ func (r *ResourceTransform) Update(
 		Config:      transformConfig,
 	}
 
-	_, monadResp, err := r.client.OrganizationTransformsAPI.
+	updated, monadResp, err := r.client.OrganizationTransformsAPI.
 		UpdateOrganizationTransform(
 			ctx,
 			r.client.OrganizationID,
@@ -328,6 +340,10 @@ func (r *ResourceTransform) Update(
 	// id/name/description/config from the plan, so nothing is copied back from
 	// the API response.
 	tflog.Trace(ctx, "updated a transform resource")
+
+	data.CreatedAt = metaString(updated.GetCreatedAt())
+	data.UpdatedAt = metaString(updated.GetUpdatedAt())
+	data.ManagedBy = managedByString(updated.ManagedBy)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

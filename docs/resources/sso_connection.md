@@ -102,6 +102,8 @@ The following arguments are optional:
 This resource exports the following attributes in addition to the arguments above:
 
 * `id` - UUID of the connection.
+* `created_at` - When the object was created, as an RFC 3339 timestamp set by the API.
+* `updated_at` - When the object was last changed. Shown as `(known after apply)` whenever the resource has other changes, because every write moves it.
 
 ### Inputs and outputs
 
@@ -115,6 +117,8 @@ This resource exports the following attributes in addition to the arguments abov
 | `saml.entity_id` | Input | Set at create; a change fails the plan |
 | `saml.metadata_url` | Input | Validated by the API on create and change |
 | `timeouts` | Input | Provider-side deadlines; never sent to the API |
+| `created_at` | Output | Set by the API |
+| `updated_at` | Output | Changes on every write |
 | `id` | Output | |
 
 ## Timeouts
