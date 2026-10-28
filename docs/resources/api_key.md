@@ -22,10 +22,14 @@ Three platform rules shape this resource:
 ```terraform
 # An API key for a CI job that only sends data. Pick the narrowest role that
 # works; the API refuses to grant a key permissions the caller lacks.
+data "monad_role" "data_sender" {
+  name = "Data Sender"
+}
+
 resource "monad_api_key" "ci_sender" {
   name            = "ci-data-sender"
   description     = "Used by the ingest job in CI"
-  role_id         = var.data_sender_role_id
+  role_id         = data.monad_role.data_sender.id
   expiration_time = "2027-01-01T00:00:00Z"
 }
 
@@ -49,13 +53,17 @@ output "ci_sender_token" {
 # time_rotating (hashicorp/time) moves its timestamp every 30 days, so each
 # apply after that point rotates the key. The new expiration is only known at
 # apply time; the plan shows `token` as known after apply.
+data "monad_role" "reader" {
+  name = "Reader"
+}
+
 resource "time_rotating" "api_key" {
   rotation_days = 30
 }
 
 resource "monad_api_key" "rotated" {
   name            = "nightly-export"
-  role_id         = var.reader_role_id
+  role_id         = data.monad_role.reader.id
   expiration_time = timeadd(time_rotating.api_key.rfc3339, "1440h") # 60 days: a 30-day overlap
 }
 ```
@@ -65,7 +73,7 @@ resource "monad_api_key" "rotated" {
 The following arguments are required:
 
 * `name` - (Required) Name of the key. Can be changed in place.
-* `role_id` - (Required) ID of the organization role the key acts as. Changing it replaces the key.
+* `role_id` - (Required) ID of the organization role the key acts as: a `monad_role` resource, or a built-in role looked up with the `monad_role` data source (`data.monad_role.reader.id`). Changing it replaces the key.
 * `expiration_time` - (Required) When the key expires, as an RFC 3339 timestamp (`2027-01-01T00:00:00Z`). Must be in the future when it is set or changed; the provider checks this at plan time. Changing it regenerates the key and its token. Rewriting the same moment in another form (an offset instead of `Z`) does not regenerate.
 
 The following arguments are optional:

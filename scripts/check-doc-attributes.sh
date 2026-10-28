@@ -29,6 +29,9 @@ internal/provider/resource_secret.go:templates/resources/secret.md.tmpl
 internal/provider/resource_sso_connection.go:templates/resources/sso_connection.md.tmpl
 internal/provider/resource_alert_rule.go:templates/resources/alert_rule.md.tmpl
 internal/provider/resource_api_key.go:templates/resources/api_key.md.tmpl
+internal/provider/resource_role.go:templates/resources/role.md.tmpl
+internal/provider/data_source_role.go:templates/data-sources/role.md.tmpl
+internal/provider/data_source_permissions.go:templates/data-sources/permissions.md.tmpl
 "
 
 total=0; missing=0
