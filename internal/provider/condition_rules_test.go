@@ -278,13 +278,13 @@ func validateLeaf(t *testing.T, typeID string, build func(*ResourcePipelineCondi
 	if build != nil {
 		build(&cfg)
 	}
-	leaf := ResourcePipelineConditionCondition{TypeID: types.StringNull(), Config: cfg}
+	leafTypeID := types.StringNull()
 	if typeID != "" {
-		leaf.TypeID = types.StringValue(typeID)
+		leafTypeID = types.StringValue(typeID)
 	}
 
 	resp := &resource.ValidateConfigResponse{}
-	validateConditionLeaf(leaf, path.Root("edges").AtListIndex(0).AtName("config"), resp)
+	validateConditionLeaf(leafTypeID, &cfg, path.Root("edges").AtListIndex(0).AtName("config"), resp)
 	return resp
 }
 
