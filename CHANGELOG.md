@@ -8,6 +8,14 @@ breaking changes are released as minor version bumps.
 
 ### Added
 
+- **`monad_storage_cost_rates` resource (PRO-717).** Sets the organization's
+  $/GB storage cost rates: per storage type (`costs`) and per output
+  (`output_costs`). A singleton that manages only the types and outputs it
+  declares. The API cannot delete a storage type's rate, so removing one (or
+  destroying the resource) sets it to `0`: the same cost as never set, though
+  the Storage Costs view then shows the type as priced at `0` rather than
+  unpriced (`----`). Per-output rates are deleted. Prices are checked against the API's 0–1000 range at plan
+  time.
 - **`monad_sso_connection` resource.** Manages a SAML SSO connection: `name`,
   `description`, `email_domains`, `public_name`, `session_timeout_minutes`
   and a `saml` block (`entity_id`, `metadata_url`). The connection holds no
