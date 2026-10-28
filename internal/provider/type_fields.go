@@ -24,6 +24,7 @@ type typeField struct {
 	Name          string
 	Type          string
 	ItemType      string
+	SubType       string
 	Required      bool
 	Immutable     bool
 	Default       *string // JSON-encoded, nil when the API gives none
@@ -56,7 +57,8 @@ func flattenInto(out *[]typeField, meta map[string]any, prefix string) {
 			Path:        path,
 			Name:        str(m["name"]),
 			Type:        str(m["type"]),
-			ItemType:    firstNonEmpty(str(m["item_type"]), str(m["sub_type"])),
+			ItemType:    str(m["item_type"]),
+			SubType:     str(m["sub_type"]),
 			Required:    m["required"] == true,
 			Immutable:   m["immutable"] == true,
 			Description: str(m["description"]),
@@ -125,19 +127,13 @@ func str(v any) string {
 	return ""
 }
 
-func firstNonEmpty(a, b string) string {
-	if a != "" {
-		return a
-	}
-	return b
-}
-
 // typeFieldAttrTypes is the object type of one element of a fields list.
 var typeFieldAttrTypes = map[string]attr.Type{
 	"path":           types.StringType,
 	"name":           types.StringType,
 	"type":           types.StringType,
 	"item_type":      types.StringType,
+	"sub_type":       types.StringType,
 	"required":       types.BoolType,
 	"immutable":      types.BoolType,
 	"default":        types.StringType,
@@ -163,6 +159,7 @@ func typeFieldsValue(fields []typeField) (types.List, error) {
 			"name":           types.StringValue(f.Name),
 			"type":           types.StringValue(f.Type),
 			"item_type":      types.StringValue(f.ItemType),
+			"sub_type":       types.StringValue(f.SubType),
 			"required":       types.BoolValue(f.Required),
 			"immutable":      types.BoolValue(f.Immutable),
 			"default":        def,

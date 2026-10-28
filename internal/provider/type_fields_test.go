@@ -66,6 +66,30 @@ func TestFlattenTypeFieldsChildren(t *testing.T) {
 	require.Len(t, fields, 3)
 	assert.Equal(t, "auth.client_id", fields[1].Path)
 	assert.Equal(t, "string", fields[2].ItemType)
+	assert.Empty(t, fields[2].SubType)
+}
+
+// TestFlattenTypeFieldsSubType: sub_type is its own attribute. It used to be
+// folded into item_type, so a cron field reported item_type "cron" and a
+// secret field item_type "monad_secret".
+func TestFlattenTypeFieldsSubType(t *testing.T) {
+	meta := map[string]any{
+		"api_key":  map[string]any{"name": "API key", "type": "object", "sub_type": "monad_secret"},
+		"cron":     map[string]any{"name": "Schedule", "type": "string", "sub_type": "cron"},
+		"scopes":   map[string]any{"name": "Scopes", "type": "array", "item_type": "string"},
+		"start_at": map[string]any{"name": "Start", "type": "date", "item_type": "string"},
+	}
+	byPath := map[string]typeField{}
+	for _, f := range flattenTypeFields(meta) {
+		byPath[f.Path] = f
+	}
+	assert.Equal(t, "monad_secret", byPath["api_key"].SubType)
+	assert.Empty(t, byPath["api_key"].ItemType, "sub_type is not an element type")
+	assert.Equal(t, "cron", byPath["cron"].SubType)
+	assert.Empty(t, byPath["cron"].ItemType)
+	assert.Equal(t, "string", byPath["scopes"].ItemType)
+	assert.Empty(t, byPath["scopes"].SubType)
+	assert.Equal(t, "string", byPath["start_at"].ItemType)
 }
 
 func TestTypeFieldsValue(t *testing.T) {

@@ -44,7 +44,8 @@ Each element of a field list has:
 * `path` - Dotted path. A nested field is `parent.child`. A `one_of` field's variants nest under the variant name (`metric_config.records.threshold`), matching how the configuration writes them, and its discriminator appears as `parent.<field>` with the variant names as `allowed_values`.
 * `name` - Display name.
 * `type` - Field type, such as `string`, `int`, `bool`, `array`, `object` or `one_of`.
-* `item_type` - Element type of an array field.
+* `item_type` - Element type of an array field, such as `string`. Empty when the API gives none.
+* `sub_type` - A refinement of `type` that changes how the field is handled. Values the API uses include `monad_secret` (an object that holds a secret reference), `cron` (a cron schedule string), `rate_limit`, `url`, `duration` and `json`. Empty when the API gives none. Unlike `item_type`, it does not describe array elements.
 * `required` - Whether the field must be set.
 * `immutable` - Whether the field cannot change after creation.
 * `default` - Default value, JSON-encoded (use `jsondecode`); null when there is none.

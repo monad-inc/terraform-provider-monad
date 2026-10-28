@@ -71,7 +71,8 @@ breaking changes are released as minor version bumps.
 - **Type-catalog data sources (PRO-718):** `monad_input_type`,
   `monad_output_type`, `monad_enrichment_type`, `monad_transform_type` and
   `monad_alert_rule_type` describe a type's configuration schema from the API
-  (every field's path, type, required flag, default and allowed values;
+  (every field's path, type, `item_type`, `sub_type`, required flag, default
+  and allowed values;
   nested and `one_of` fields flattened to dotted paths, plus the raw
   `schema_json`). `monad_community_transform` reads a community transform
   whose `config` can be passed straight to `monad_transform`.
