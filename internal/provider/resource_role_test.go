@@ -93,6 +93,8 @@ func roleModifyPlan(t *testing.T, stateSlugs, planSlugs []string) (diag.Diagnost
 		return tftypes.NewValue(typ, map[string]tftypes.Value{
 			"timeouts":    tftypes.NewValue(typ.(tftypes.Object).AttributeTypes["timeouts"], nil),
 			"id":          tftypes.NewValue(tftypes.String, "role-id"),
+			"created_at":  tftypes.NewValue(tftypes.String, nil),
+			"updated_at":  tftypes.NewValue(tftypes.String, nil),
 			"name":        tftypes.NewValue(tftypes.String, "r"),
 			"description": tftypes.NewValue(tftypes.String, nil),
 			"permissions": tftypes.NewValue(tftypes.Set{ElementType: tftypes.String}, elems),

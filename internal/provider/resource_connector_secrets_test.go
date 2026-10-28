@@ -31,6 +31,10 @@ func connectorSchemas(t *testing.T) map[string]schema.Schema {
 	return out
 }
 
+// storedUpdatedAt is the updated_at the test state (and so the incoming plan)
+// carries, so a test can tell "kept from state" from "planned unknown".
+const storedUpdatedAt = "2026-01-01T00:00:00Z"
+
 // connectorValues builds a connector object whose config block carries the
 // given secrets and secrets_hash; every other attribute is fixed or null.
 func connectorValues(t *testing.T, typ tftypes.Object, secrets, hash tftypes.Value) tftypes.Value {
@@ -42,6 +46,9 @@ func connectorValues(t *testing.T, typ tftypes.Object, secrets, hash tftypes.Val
 		"name":        tftypes.NewValue(tftypes.String, "example"),
 		"description": tftypes.NewValue(tftypes.String, nil),
 		"type":        tftypes.NewValue(tftypes.String, "demo"),
+		"created_at":  tftypes.NewValue(tftypes.String, nil),
+		"updated_at":  tftypes.NewValue(tftypes.String, storedUpdatedAt),
+		"managed_by":  tftypes.NewValue(tftypes.String, nil),
 		"config": tftypes.NewValue(configType, map[string]tftypes.Value{
 			"settings":     tftypes.NewValue(tftypes.DynamicPseudoType, nil),
 			"secrets":      secrets,
@@ -122,6 +129,17 @@ func TestConnectorModifyPlanForSecrets(t *testing.T) {
 				var got types.String
 				require.False(t, resp.Plan.GetAttribute(ctx, path.Root("config").AtName("secrets_hash"), &got).HasError())
 				assert.Equal(t, tc.wantUnknown, got.IsUnknown(), "secrets_hash unknown")
+
+				// A change to write-only secrets alone leaves plan equal to
+				// state, so the framework does not mark updated_at unknown;
+				// ModifyPlan must, or the API's new updated_at is an
+				// inconsistent result.
+				var updatedAt types.String
+				require.False(t, resp.Plan.GetAttribute(ctx, path.Root("updated_at"), &updatedAt).HasError())
+				assert.Equal(t, tc.wantUnknown, updatedAt.IsUnknown(), "updated_at unknown with secrets_hash")
+				if !tc.wantUnknown {
+					assert.Equal(t, storedUpdatedAt, updatedAt.ValueString(), "updated_at kept from state")
+				}
 				if !tc.wantUnknown {
 					var want types.String
 					require.False(t, req.State.GetAttribute(ctx, path.Root("config").AtName("secrets_hash"), &want).HasError())

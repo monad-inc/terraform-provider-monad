@@ -30,6 +30,8 @@ type ResourceSecret struct {
 
 type ResourceSecretModel struct {
 	Timeouts    timeouts.Value `tfsdk:"timeouts"`
+	CreatedAt   types.String   `tfsdk:"created_at"`
+	UpdatedAt   types.String   `tfsdk:"updated_at"`
 	ID          types.String   `tfsdk:"id"`
 	Name        types.String   `tfsdk:"name"`
 	Description types.String   `tfsdk:"description"`
@@ -120,6 +122,7 @@ func (r *ResourceSecret) Schema(
 			},
 		},
 	}
+	withComputedMeta(resp.Schema.Attributes, false)
 }
 
 func (r *ResourceSecret) computeValueHash(ctx context.Context, value string) string {
@@ -178,6 +181,9 @@ func (r *ResourceSecret) Create(
 
 	tflog.Trace(ctx, "created a secret resource")
 
+	data.CreatedAt = metaString(secret.GetCreatedAt())
+	data.UpdatedAt = metaString(secret.GetUpdatedAt())
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -231,6 +237,9 @@ func (r *ResourceSecret) Read(
 	// in config. Storing "" here produced a spurious `"" -> null` update on the
 	// next plan and then an inconsistent-result error on apply (ENG-9867).
 	data.Description = reconcileOptionalString(data.Description, secret.GetDescription())
+
+	data.CreatedAt = metaString(secret.GetCreatedAt())
+	data.UpdatedAt = metaString(secret.GetUpdatedAt())
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -301,6 +310,9 @@ func (r *ResourceSecret) Update(
 
 	tflog.Trace(ctx, "updated a secret resource")
 
+	data.CreatedAt = metaString(secret.GetCreatedAt())
+	data.UpdatedAt = metaString(secret.GetUpdatedAt())
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -339,7 +351,7 @@ func (r *ResourceSecret) ModifyPlan(
 	// A value not known until apply (e.g. derived from another resource) may
 	// or may not be a rotation; plan the update so Update can decide.
 	if value.IsUnknown() {
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, hashPath, types.StringUnknown())...)
+		resp.Diagnostics.Append(planWriteOnlyChange(ctx, &resp.Plan, hashPath)...)
 		return
 	}
 
@@ -350,7 +362,7 @@ func (r *ResourceSecret) ModifyPlan(
 	}
 
 	if r.computeValueHash(ctx, value.ValueString()) != stateHash.ValueString() {
-		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, hashPath, types.StringUnknown())...)
+		resp.Diagnostics.Append(planWriteOnlyChange(ctx, &resp.Plan, hashPath)...)
 	}
 }
 

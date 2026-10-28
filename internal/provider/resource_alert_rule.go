@@ -32,6 +32,9 @@ type ResourceAlertRule struct {
 
 type ResourceAlertRuleModel struct {
 	Timeouts        timeouts.Value `tfsdk:"timeouts"`
+	CreatedAt       types.String   `tfsdk:"created_at"`
+	UpdatedAt       types.String   `tfsdk:"updated_at"`
+	ManagedBy       types.String   `tfsdk:"managed_by"`
 	ID              types.String   `tfsdk:"id"`
 	Name            types.String   `tfsdk:"name"`
 	Description     types.String   `tfsdk:"description"`
@@ -173,6 +176,7 @@ func (r *ResourceAlertRule) Schema(
 			},
 		},
 	}
+	withComputedMeta(resp.Schema.Attributes, true)
 }
 
 func (r *ResourceAlertRule) Create(
@@ -259,6 +263,10 @@ func (r *ResourceAlertRule) Create(
 
 	tflog.Trace(ctx, "created an alert rule resource")
 
+	data.CreatedAt = metaString(rule.GetCreatedAt())
+	data.UpdatedAt = metaString(rule.GetUpdatedAt())
+	data.ManagedBy = managedByString(rule.ManagedBy)
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -336,6 +344,10 @@ func (r *ResourceAlertRule) Read(
 	}
 	data.RuleConfig = config
 
+	data.CreatedAt = metaString(rule.GetCreatedAt())
+	data.UpdatedAt = metaString(rule.GetUpdatedAt())
+	data.ManagedBy = managedByString(rule.ManagedBy)
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -394,7 +406,7 @@ func (r *ResourceAlertRule) Update(
 		RuleConfig:      ruleConfig,
 	}
 
-	_, monadResp, err := r.client.AlertRulesAPI.
+	updated, monadResp, err := r.client.AlertRulesAPI.
 		UpdateAlertRule(ctx, r.client.OrganizationID, data.ID.ValueString()).
 		UpdateAlertRuleRequest(
 			monad.RoutesV3UpdateAlertRuleRequestAsUpdateAlertRuleRequest(&request),
@@ -419,6 +431,10 @@ func (r *ResourceAlertRule) Update(
 	data.InvertSelection = types.BoolValue(invertSelection)
 
 	tflog.Trace(ctx, "updated an alert rule resource")
+
+	data.CreatedAt = metaString(updated.GetCreatedAt())
+	data.UpdatedAt = metaString(updated.GetUpdatedAt())
+	data.ManagedBy = managedByString(updated.ManagedBy)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
