@@ -17,7 +17,11 @@ API via the generated Go SDK `github.com/monad-inc/sdk/go`.
   `monad_sso_connection`, `monad_api_key`, `monad_role`. Data sources:
   `monad_role`, `monad_permissions`, and lookups for `monad_input`,
   `monad_output`, `monad_transform`, `monad_enrichment`, `monad_pipeline`,
-  `monad_secret` (`data_source_lookup.go`).
+  `monad_secret` (`data_source_lookup.go`), and type-catalog lookups for
+  `monad_input_type`, `monad_output_type`, `monad_enrichment_type`,
+  `monad_alert_rule_type`, `monad_transform_type`, plus
+  `monad_community_transform` (`data_source_types.go`,
+  `data_source_community_transform.go`).
 - `input`/`output`/`enrichment`/`transform` share `resource_connector.go`
   (schema, Create/Update/Read helpers, the secrets/hash machinery).
 - Conversion + reconciliation helpers live in `utils.go`; their unit tests are
