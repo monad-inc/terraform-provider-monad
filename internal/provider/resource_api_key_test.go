@@ -4,9 +4,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -63,4 +66,66 @@ func TestReconcileTimestamp(t *testing.T) {
 	// Import: no prior, the API value populates.
 	got = reconcileTimestamp(types.StringNull(), "2027-01-01T00:00:00Z")
 	assert.Equal(t, "2027-01-01T00:00:00Z", got.ValueString())
+}
+
+// TestAPIKeyModifyPlanToken: the token is planned unknown whenever the key may
+// be regenerated. That includes an expiration_time known only at apply (e.g.
+// from time_rotating): Terraform re-plans once the value is known, and a token
+// that turned unknown only then failed as an inconsistent final plan, so such a
+// key could never rotate.
+func TestAPIKeyModifyPlanToken(t *testing.T) {
+	ctx := context.Background()
+	s := apiKeySchema(t)
+	typ := s.Type().TerraformType(ctx).(tftypes.Object)
+
+	const stored = "2099-01-01T00:00:00Z"
+	str := func(v string) tftypes.Value { return tftypes.NewValue(tftypes.String, v) }
+	unknown := tftypes.NewValue(tftypes.String, tftypes.UnknownValue)
+	value := func(expiration, token tftypes.Value) tftypes.Value {
+		vals := map[string]tftypes.Value{}
+		for name, at := range typ.AttributeTypes {
+			vals[name] = tftypes.NewValue(at, nil)
+		}
+		vals["id"] = str("key-id")
+		vals["name"] = str("ci")
+		vals["role_id"] = str("role-id")
+		vals["expiration_time"] = expiration
+		vals["token"] = token
+		return tftypes.NewValue(typ, vals)
+	}
+
+	cases := []struct {
+		name        string
+		state       tftypes.Value
+		expiration  tftypes.Value
+		planToken   tftypes.Value
+		wantUnknown bool
+	}{
+		{"update with an expiration known only at apply", value(str(stored), str("old")), unknown, str("old"), true},
+		{"update with a changed expiration", value(str(stored), str("old")), str("2099-06-01T00:00:00Z"), str("old"), true},
+		{"update with the same instant keeps the token", value(str(stored), str("old")), str("2099-01-01T00:00:00+00:00"), str("old"), false},
+		{"create with an expiration known only at apply", tftypes.NewValue(typ, nil), unknown, unknown, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// UseStateForUnknown has already run, so an update plan carries
+			// state's token.
+			plan := value(tc.expiration, tc.planToken)
+			req := resource.ModifyPlanRequest{
+				State: tfsdk.State{Schema: s, Raw: tc.state},
+				Plan:  tfsdk.Plan{Schema: s, Raw: plan},
+			}
+			resp := resource.ModifyPlanResponse{Plan: tfsdk.Plan{Schema: s, Raw: plan}}
+
+			(&ResourceAPIKey{}).ModifyPlan(ctx, req, &resp)
+			require.False(t, resp.Diagnostics.HasError(), resp.Diagnostics)
+
+			var got types.String
+			require.False(t, resp.Plan.GetAttribute(ctx, path.Root("token"), &got).HasError())
+			assert.Equal(t, tc.wantUnknown, got.IsUnknown(), "token unknown")
+			if !tc.wantUnknown {
+				assert.Equal(t, "old", got.ValueString(), "token preserved from state")
+			}
+		})
+	}
 }

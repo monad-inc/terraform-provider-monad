@@ -8,6 +8,41 @@ breaking changes are released as minor version bumps.
 
 ### Added
 
+- **`monad_sso_connection` resource.** Manages a SAML SSO connection: `name`,
+  `description`, `email_domains`, `public_name`, `session_timeout_minutes`
+  and a `saml` block (`entity_id`, `metadata_url`). The connection holds no
+  secrets; Monad reads the IdP certificate from the metadata URL.
+  `email_domains` and `saml.entity_id` cannot be changed by the API, so a
+  change to either on an existing connection fails the plan. The provider
+  never replaces a connection, because deleting one deletes the users, roles
+  and sessions bound to it.
+  The resource page recommends `lifecycle { prevent_destroy = true }` to
+  guard against `terraform destroy` and removal from configuration.
+- `monad_pipeline`: `nodes.enabled` and `edges.disabled`. Omitted means enabled,
+  as before. A toggle made outside Terraform now shows as drift on the next
+  plan, and applying returns the node or edge to the configured state; declare
+  `enabled = false` / `disabled = true` to keep it disabled. (Unlike the
+  pipeline-level `enabled`, these can't adopt the server value when omitted:
+  they sit inside set blocks, where a computed attribute would plan as
+  unknown on every element.)
+- `monad_alert_rule`: `invert_selection`, default `false`, refreshed on read.
+- `monad_pipeline`: edge-condition **groups** (ENG-11405). An element of
+  `edges.condition.conditions` can now set `operator` and nested `conditions`
+  instead of `type_id` and `config`, so `and(or(a, b), c)` can be written and
+  imported. Before, the provider modelled one level only: a group created in
+  the UI or API read back as an empty rule, and `terraform import
+  -generate-config-out` emitted config that failed with `Missing condition
+  type_id`. The API caps conditions at three levels (edge operator, group,
+  rules), so a group holds rules, not other groups. Additive: existing
+  configurations and state are unchanged.
+- **`monad_api_key` resource (PRO-713).** Create, rename, rotate, import and
+  delete organization API keys. The token is returned by the API only at
+  create and regenerate, so it is a sensitive attribute stored in state.
+  Changing `expiration_time` regenerates the key in place (same id, new token,
+  old token revoked); changing `role_id` replaces it. An `expiration_time`
+  known only at apply, such as one derived from `time_rotating`, plans the
+  token as known after apply. A create that times out and is adopted is
+  regenerated immediately so state holds a usable token.
 - **`monad_role` resource and `monad_role` / `monad_permissions` data sources
   (PRO-714).** `monad_role` manages a custom role, with permissions written as
   slugs (`pipeline:read`) and resolved to the catalog's IDs; an unknown slug
@@ -18,20 +53,40 @@ breaking changes are released as minor version bumps.
   longer needs a hard-coded UUID. `monad_permissions` lists the catalog.
   These are the provider's first data sources.
 
-- **`monad_api_key` resource (PRO-713).** Create, rename, rotate, import and
-  delete organization API keys. The token is returned by the API only at
-  create and regenerate, so it is a sensitive attribute stored in state.
-  Changing `expiration_time` regenerates the key in place (same id, new token,
-  old token revoked); changing `role_id` replaces it. A create that times out
-  and is adopted is regenerated immediately so state holds a usable token.
-
 ### Fixed
 
+- **Applying a pipeline no longer silently re-enables nodes and edges
+  disabled in the UI, and applying an alert rule no longer resets
+  `invert_selection` (ENG-11404).** The update requests replace the whole node
+  and edge sets and the whole alert rule, and the provider did not model these
+  three fields, so it sent every node as enabled, every edge as not disabled,
+  and `invert_selection = false` on every apply. `plan` never showed the
+  change. An exclude-list alert rule edited by any apply therefore started
+  alerting on exactly the pipelines it was meant to skip.
 - **Documentation: the S3 examples on the `monad_input` and `monad_secret`
   pages now apply.** The inline-secret input example omitted `compression` and
   `partition_format`, and the secret-reference output example also omitted
   `format_config`. The API now requires all of them, so copying either example
   failed with `400 Bad Request`.
+- **Documentation: `monad_alert_rule` no longer presents
+  `billing-metrics-cost-budget` as a type the provider can create.** A billing
+  account can span several Monad organizations, but an API key is scoped to a
+  single organization, so the Monad API refuses billing operations from API
+  keys. The provider authenticates with an API key, so creating a billing alert
+  rule always failed with `400 Bad Request`. The page now says so, and the
+  "Organization spend" example is removed. Create billing alert rules in the
+  Monad UI.
+
+### Changed
+
+- **`monad_alert_rule` rejects `billing-metrics-cost-budget` at validate time.**
+  `terraform validate` and `terraform plan` now report "Billing alert rules
+  cannot be managed with Terraform" on the `type` attribute, instead of the
+  plan succeeding and the apply failing with `400 Bad Request`. A `type` that
+  is unknown until apply is still left to the API. Such a rule could never be
+  created with this provider. If you imported one that was created in the UI,
+  remove it from your configuration and run
+  `terraform state rm monad_alert_rule.<name>`; the rule stays in Monad.
 
 ## 0.5.2
 
