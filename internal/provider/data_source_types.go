@@ -237,13 +237,6 @@ var (
 		get: func(ctx context.Context, c *client.Client, id string) (typeInfo, any, *http.Response, error) {
 			m, r, err := c.AlertRulesAPI.GetAlertRuleConfigMeta(ctx, id).Execute()
 			if err != nil {
-				// The API answers 200 with `"managed_by": ""`, which the SDK's
-				// strict ModelsManagedBy enum refuses to decode, so every call
-				// errors on a valid response. Read the body ourselves in that
-				// case; when the SDK is fixed this branch simply stops running.
-				if r != nil && r.StatusCode == http.StatusOK {
-					return alertRuleTypeFromBody(getResponseBody(r), r)
-				}
 				return typeInfo{}, nil, r, err
 			}
 			return typeInfo{Name: m.GetName(), Description: m.GetDescription(), Vendor: strOf(m.House),
@@ -271,21 +264,3 @@ var (
 		},
 	})
 )
-
-// alertRuleTypeFromBody decodes an alert rule type's metadata from the raw
-// response body (see the SDK workaround in NewDataSourceAlertRuleType).
-func alertRuleTypeFromBody(body []byte, r *http.Response) (typeInfo, any, *http.Response, error) {
-	var m struct {
-		Name        string         `json:"name"`
-		Description string         `json:"description"`
-		House       string         `json:"house"`
-		Category    string         `json:"category"`
-		Granularity string         `json:"granularity"`
-		Config      map[string]any `json:"config"`
-	}
-	if err := json.Unmarshal(body, &m); err != nil {
-		return typeInfo{}, nil, r, fmt.Errorf("decoding alert rule type: %w", err)
-	}
-	return typeInfo{Name: m.Name, Description: m.Description, Vendor: m.House,
-		Category: m.Category, Granularity: m.Granularity}, m.Config, r, nil
-}
