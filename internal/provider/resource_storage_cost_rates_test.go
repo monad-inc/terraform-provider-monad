@@ -105,6 +105,17 @@ func TestStorageCostRatesValidateConfig(t *testing.T) {
 		{"output seven decimals", cfg(nullCosts, outs(outID, 0.1234567)), true},
 		{"out of range", cfg(costs(map[string]float64{"dev-null": 1000.5}), nullOuts), true},
 		{"output key not a UUID", cfg(nullCosts, outs("my-splunk-output", 0.25)), true},
+		// An entry built from a value known only at apply is itself unknown.
+		{"output entry unknown", cfg(nullCosts, tftypes.NewValue(outsT, map[string]tftypes.Value{
+			outID: tftypes.NewValue(outT, tftypes.UnknownValue),
+		})), false},
+		{"output cost unknown", cfg(nullCosts, tftypes.NewValue(outsT, map[string]tftypes.Value{outID: tftypes.NewValue(outT, map[string]tftypes.Value{
+			"storage_type": tftypes.NewValue(tftypes.String, "dev-null"),
+			"cost_per_gb":  tftypes.NewValue(tftypes.Number, tftypes.UnknownValue),
+		})})), false},
+		{"costs value unknown", cfg(tftypes.NewValue(costsT, map[string]tftypes.Value{
+			"dev-null": tftypes.NewValue(tftypes.Number, tftypes.UnknownValue),
+		}), nullOuts), false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

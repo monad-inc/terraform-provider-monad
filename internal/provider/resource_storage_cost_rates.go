@@ -170,16 +170,23 @@ func (r *ResourceStorageCostRates) ValidateConfig(ctx context.Context, req resou
 		}
 	}
 	if !data.OutputCosts.IsNull() && !data.OutputCosts.IsUnknown() {
-		var outs map[string]storageOutputCost
-		resp.Diagnostics.Append(data.OutputCosts.ElementsAs(ctx, &outs, false)...)
-		for k, o := range outs {
+		// Walk the elements rather than ElementsAs into storageOutputCost: an
+		// entry built from a value known only at apply is itself unknown, which
+		// the struct cannot hold.
+		for k, v := range data.OutputCosts.Elements() {
 			if _, err := uuid.ParseUUID(k); err != nil {
 				// Caught here because the API writes the costs entries before it
 				// reaches a bad output ID, then fails with a 500.
 				resp.Diagnostics.AddAttributeError(path.Root("output_costs").AtMapKey(k), "Invalid output ID",
 					fmt.Sprintf("output_costs is keyed by output ID (a UUID); %q is not one.", k))
 			}
-			check(path.Root("output_costs").AtMapKey(k).AtName("cost_per_gb"), o.CostPerGB)
+			o, ok := v.(types.Object)
+			if !ok || o.IsNull() || o.IsUnknown() {
+				continue
+			}
+			if f, ok := o.Attributes()["cost_per_gb"].(types.Float64); ok {
+				check(path.Root("output_costs").AtMapKey(k).AtName("cost_per_gb"), f)
+			}
 		}
 	}
 }
