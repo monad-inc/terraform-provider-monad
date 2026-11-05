@@ -14,7 +14,7 @@ API via the generated Go SDK `github.com/monad-inc/sdk/go`.
 
 - Resources: `monad_input`, `monad_output`, `monad_enrichment`,
   `monad_transform`, `monad_pipeline`, `monad_secret`, `monad_alert_rule`,
-  `monad_sso_connection`, `monad_api_key`, `monad_role`. Data sources:
+  `monad_sso_connection`, `monad_api_key`, `monad_role`, `monad_organization`. Data sources:
   `monad_role`, `monad_permissions`, and lookups for `monad_input`,
   `monad_output`, `monad_transform`, `monad_enrichment`, `monad_pipeline`,
   `monad_secret` (`data_source_lookup.go`).
