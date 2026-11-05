@@ -18,6 +18,12 @@ cd "$(dirname "$0")/.."
 
 # schema source file -> templates that document it (space-separated after the
 # colon). resource_connector.go is shared by monad_input and monad_output.
+# computed_meta.go declares created_at/updated_at/managed_by for every resource;
+# monad_secret, monad_sso_connection, monad_api_key and monad_role have no
+# managed_by, so their pages are checked by hand.
+# data_source_lookup.go is not mapped: it declares the union of attributes for
+# six lookup data sources, each of which exposes a subset, so their pages are
+# checked by hand.
 # A plain list rather than an associative array: macOS ships bash 3.2.
 sources="
 internal/provider/provider.go:templates/index.md.tmpl
@@ -28,6 +34,11 @@ internal/provider/resource_pipeline.go:templates/resources/pipeline.md.tmpl
 internal/provider/resource_secret.go:templates/resources/secret.md.tmpl
 internal/provider/resource_sso_connection.go:templates/resources/sso_connection.md.tmpl
 internal/provider/resource_alert_rule.go:templates/resources/alert_rule.md.tmpl
+internal/provider/computed_meta.go:templates/resources/input.md.tmpl templates/resources/output.md.tmpl templates/resources/enrichment.md.tmpl templates/resources/transform.md.tmpl templates/resources/pipeline.md.tmpl templates/resources/alert_rule.md.tmpl
+internal/provider/resource_api_key.go:templates/resources/api_key.md.tmpl
+internal/provider/resource_role.go:templates/resources/role.md.tmpl
+internal/provider/data_source_role.go:templates/data-sources/role.md.tmpl
+internal/provider/data_source_permissions.go:templates/data-sources/permissions.md.tmpl
 internal/provider/resource_storage_cost_rates.go:templates/resources/storage_cost_rates.md.tmpl
 "
 

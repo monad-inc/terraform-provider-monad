@@ -110,8 +110,10 @@ func upgradePipelineStateV0toCurrent(
 			}
 
 			conditions[j] = ResourcePipelineConditionCondition{
-				TypeID: leaf.TypeID,
-				Config: ResourcePipelineConditionConditionConfig{
+				TypeID:     leaf.TypeID,
+				Operator:   types.StringNull(),
+				Conditions: []ResourcePipelineConditionLeaf{},
+				Config: &ResourcePipelineConditionConditionConfig{
 					Key:              leaf.Config.Key,
 					Value:            types.StringNull(),
 					Values:           values,

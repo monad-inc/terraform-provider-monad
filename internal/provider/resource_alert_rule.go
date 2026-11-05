@@ -31,15 +31,19 @@ type ResourceAlertRule struct {
 }
 
 type ResourceAlertRuleModel struct {
-	Timeouts    timeouts.Value `tfsdk:"timeouts"`
-	ID          types.String   `tfsdk:"id"`
-	Name        types.String   `tfsdk:"name"`
-	Description types.String   `tfsdk:"description"`
-	Type        types.String   `tfsdk:"type"`
-	Severity    types.String   `tfsdk:"severity"`
-	Active      types.Bool     `tfsdk:"active"`
-	PipelineIDs types.Set      `tfsdk:"pipeline_ids"`
-	RuleConfig  types.Dynamic  `tfsdk:"rule_config"`
+	Timeouts        timeouts.Value `tfsdk:"timeouts"`
+	CreatedAt       types.String   `tfsdk:"created_at"`
+	UpdatedAt       types.String   `tfsdk:"updated_at"`
+	ManagedBy       types.String   `tfsdk:"managed_by"`
+	ID              types.String   `tfsdk:"id"`
+	Name            types.String   `tfsdk:"name"`
+	Description     types.String   `tfsdk:"description"`
+	Type            types.String   `tfsdk:"type"`
+	Severity        types.String   `tfsdk:"severity"`
+	Active          types.Bool     `tfsdk:"active"`
+	PipelineIDs     types.Set      `tfsdk:"pipeline_ids"`
+	InvertSelection types.Bool     `tfsdk:"invert_selection"`
+	RuleConfig      types.Dynamic  `tfsdk:"rule_config"`
 }
 
 func NewResourceAlertRule() resource.Resource {
@@ -142,6 +146,20 @@ func (r *ResourceAlertRule) Schema(
 				Optional:    true,
 				ElementType: types.StringType,
 			},
+			"invert_selection": schema.BoolAttribute{
+				MarkdownDescription: "Read `pipeline_ids` as an exclude-list instead of an include-list, so " +
+					"the rule watches every pipeline except those listed. Defaults to `false`. Only applies " +
+					"to pipeline-scoped rule types.",
+				Optional: true,
+				// Same shape as `active`. The update endpoint is a full replace,
+				// so leaving this out of the model reset a UI-set value to false
+				// on every apply (ENG-11404).
+				Computed: true,
+				Default:  booldefault.StaticBool(false),
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.UseStateForUnknown(),
+				},
+			},
 			"rule_config": schema.DynamicAttribute{
 				MarkdownDescription: "Type-specific alert rule configuration. Each alert type has " +
 					"its own settings schema, validated by the API on write, so this is modeled as " +
@@ -158,6 +176,7 @@ func (r *ResourceAlertRule) Schema(
 			},
 		},
 	}
+	withComputedMeta(resp.Schema.Attributes, true)
 }
 
 func (r *ResourceAlertRule) Create(
@@ -187,6 +206,7 @@ func (r *ResourceAlertRule) Create(
 	if !data.Active.IsNull() {
 		active = data.Active.ValueBool()
 	}
+	invertSelection := data.InvertSelection.ValueBool()
 
 	pipelineIDs, diags := alertRulePipelineIDs(ctx, data.PipelineIDs)
 	resp.Diagnostics.Append(diags...)
@@ -204,13 +224,14 @@ func (r *ResourceAlertRule) Create(
 	}
 
 	request := monad.RoutesV3CreateAlertRuleRequest{
-		Name:        data.Name.ValueStringPointer(),
-		Description: data.Description.ValueStringPointer(),
-		Type:        data.Type.ValueStringPointer(),
-		Severity:    data.Severity.ValueStringPointer(),
-		Active:      &active,
-		PipelineIds: pipelineIDs,
-		RuleConfig:  ruleConfig,
+		Name:            data.Name.ValueStringPointer(),
+		Description:     data.Description.ValueStringPointer(),
+		Type:            data.Type.ValueStringPointer(),
+		Severity:        data.Severity.ValueStringPointer(),
+		Active:          &active,
+		PipelineIds:     pipelineIDs,
+		InvertSelection: &invertSelection,
+		RuleConfig:      ruleConfig,
 	}
 
 	startedAt := time.Now().UTC()
@@ -238,8 +259,13 @@ func (r *ResourceAlertRule) Create(
 	// rebuilt from the response.
 	data.ID = types.StringValue(createdID)
 	data.Active = types.BoolValue(active)
+	data.InvertSelection = types.BoolValue(invertSelection)
 
 	tflog.Trace(ctx, "created an alert rule resource")
+
+	data.CreatedAt = metaString(rule.GetCreatedAt())
+	data.UpdatedAt = metaString(rule.GetUpdatedAt())
+	data.ManagedBy = managedByString(rule.ManagedBy)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
@@ -289,6 +315,7 @@ func (r *ResourceAlertRule) Read(
 	data.Type = types.StringValue(rule.GetType())
 	data.Severity = types.StringValue(rule.GetSeverity())
 	data.Active = types.BoolValue(rule.GetActive())
+	data.InvertSelection = types.BoolValue(rule.GetInvertSelection())
 
 	// description is the one genuinely-optional string scalar: convert an API ""
 	// back to null so an omitted attribute doesn't read as drift (the API drops
@@ -317,6 +344,10 @@ func (r *ResourceAlertRule) Read(
 	}
 	data.RuleConfig = config
 
+	data.CreatedAt = metaString(rule.GetCreatedAt())
+	data.UpdatedAt = metaString(rule.GetUpdatedAt())
+	data.ManagedBy = managedByString(rule.ManagedBy)
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -342,6 +373,7 @@ func (r *ResourceAlertRule) Update(
 	if !data.Active.IsNull() {
 		active = data.Active.ValueBool()
 	}
+	invertSelection := data.InvertSelection.ValueBool()
 
 	pipelineIDs, diags := alertRulePipelineIDs(ctx, data.PipelineIDs)
 	resp.Diagnostics.Append(diags...)
@@ -360,19 +392,21 @@ func (r *ResourceAlertRule) Update(
 
 	// The alert-rule update endpoint is a full replace (PUT): omitted fields
 	// reset to their defaults. Send the complete desired state — every plan
-	// value — so `active`/`severity`/`pipeline_ids` are never silently cleared.
+	// value — so `active`/`severity`/`pipeline_ids`/`invert_selection` are never
+	// silently cleared.
 	// `type` is immutable and carries RequiresReplace, so it never reaches here
 	// changed; it is not part of the update request model.
 	request := monad.RoutesV3UpdateAlertRuleRequest{
-		Name:        data.Name.ValueStringPointer(),
-		Description: data.Description.ValueStringPointer(),
-		Severity:    data.Severity.ValueStringPointer(),
-		Active:      &active,
-		PipelineIds: pipelineIDs,
-		RuleConfig:  ruleConfig,
+		Name:            data.Name.ValueStringPointer(),
+		Description:     data.Description.ValueStringPointer(),
+		Severity:        data.Severity.ValueStringPointer(),
+		Active:          &active,
+		PipelineIds:     pipelineIDs,
+		InvertSelection: &invertSelection,
+		RuleConfig:      ruleConfig,
 	}
 
-	_, monadResp, err := r.client.AlertRulesAPI.
+	updated, monadResp, err := r.client.AlertRulesAPI.
 		UpdateAlertRule(ctx, r.client.OrganizationID, data.ID.ValueString()).
 		UpdateAlertRuleRequest(
 			monad.RoutesV3UpdateAlertRuleRequestAsUpdateAlertRuleRequest(&request),
@@ -391,10 +425,16 @@ func (r *ResourceAlertRule) Update(
 	}
 
 	// Preserve plan-known values (see Create): `data` already holds them from
-	// the plan; only `active` is resolved to a known value here.
+	// the plan; only `active` and `invert_selection` are resolved to known
+	// values here.
 	data.Active = types.BoolValue(active)
+	data.InvertSelection = types.BoolValue(invertSelection)
 
 	tflog.Trace(ctx, "updated an alert rule resource")
+
+	data.CreatedAt = metaString(updated.GetCreatedAt())
+	data.UpdatedAt = metaString(updated.GetUpdatedAt())
+	data.ManagedBy = managedByString(updated.ManagedBy)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

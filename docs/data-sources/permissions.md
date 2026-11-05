@@ -1,0 +1,36 @@
+---
+page_title: "monad_permissions Data Source - monad"
+subcategory: ""
+description: |-
+  Reads the permission catalog: every permission a role can grant.
+---
+
+# Data Source: monad_permissions
+
+Reads every permission a [`monad_role`](../resources/role.md) can grant. Each one has a slug in `resource:action` form (`pipeline:read`, `input:write`, `apikey:delete`), which is what `monad_role.permissions` takes.
+
+## Example Usage
+
+```terraform
+data "monad_permissions" "all" {}
+
+# Every read permission, for an auditor role.
+resource "monad_role" "auditor" {
+  name        = "Auditor"
+  permissions = [for s in data.monad_permissions.all.slugs : s if endswith(s, ":read")]
+}
+```
+
+## Argument Reference
+
+This data source takes no arguments.
+
+## Attribute Reference
+
+* `id` - The organization ID the catalog was read for.
+* `slugs` - Set of every permission slug, for `contains()` checks and filtering in `for` expressions.
+* `permissions` - List of every permission, sorted by slug. Each element has:
+  * `id` - Permission UUID.
+  * `slug` - Slug, such as `pipeline:read`.
+  * `name` - Display name.
+  * `description` - What the permission allows.
