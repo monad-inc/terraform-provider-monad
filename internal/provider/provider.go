@@ -173,6 +173,7 @@ func (p *MonadProvider) Resources(ctx context.Context) []func() resource.Resourc
 		NewResourceAlertRule,
 		NewResourceAPIKey,
 		NewResourceRole,
+		NewResourceStorageCostRates,
 	}
 }
 

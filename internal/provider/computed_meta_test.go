@@ -26,6 +26,14 @@ func TestComputedMetaOnEveryResource(t *testing.T) {
 		r.Schema(ctx, resource.SchemaRequest{}, &s)
 
 		t.Run(meta.TypeName, func(t *testing.T) {
+			// A singleton over an organization setting, not an API object: the
+			// storage cost config has no created_at, updated_at or managed_by.
+			if meta.TypeName == "monad_storage_cost_rates" {
+				for _, k := range []string{"created_at", "updated_at", "managed_by"} {
+					assert.NotContains(t, s.Schema.Attributes, k)
+				}
+				return
+			}
 			created, ok := s.Schema.Attributes["created_at"].(schema.StringAttribute)
 			require.True(t, ok, "created_at missing")
 			assert.True(t, created.Computed)

@@ -39,6 +39,7 @@ internal/provider/resource_api_key.go:templates/resources/api_key.md.tmpl
 internal/provider/resource_role.go:templates/resources/role.md.tmpl
 internal/provider/data_source_role.go:templates/data-sources/role.md.tmpl
 internal/provider/data_source_permissions.go:templates/data-sources/permissions.md.tmpl
+internal/provider/resource_storage_cost_rates.go:templates/resources/storage_cost_rates.md.tmpl
 "
 
 total=0; missing=0
