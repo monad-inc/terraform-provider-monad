@@ -26,7 +26,7 @@ Three platform rules shape how it behaves:
 At least one of `costs` and `output_costs` is required. An empty resource would take over every rate in the organization on its next refresh, and an apply would then set them all to `0`, so it fails at plan time instead. To stop managing rates, remove the resource; to stop managing them *and* keep their values, use a [`removed` block](https://developer.hashicorp.com/terraform/language/resources/syntax#removing-resources) with `destroy = false`.
 
 * `costs` - (Optional) Map of storage type (output type ID, such as `dev-null` or `kv-lookup`) to its default price in $/GB. Applies to every output of that type that has no entry in `output_costs`. Prices are `0`–`1000` with at most six decimal places, the precision Monad stores; both are checked at plan time.
-* `output_costs` - (Optional) Map of output ID to that output's own price. [See below](#output_costs). Keys must be output IDs (UUIDs), usually `monad_output.x.id`; anything else fails at plan time.
+* `output_costs` - (Optional) Map of output ID to that output's own price. [See below](#output_costs). Keys must be output IDs (UUIDs), usually `monad_output.x.id`; anything else fails at plan time. Per-output pricing must be enabled for the organization; where it is not, an apply that sets or removes an `output_costs` entry fails with `403 Per-output storage pricing is not enabled for this organization` and changes nothing.
 * `timeouts` - (Optional) Operation timeouts for this resource. [See below](#timeouts).
 
 ### `output_costs`
