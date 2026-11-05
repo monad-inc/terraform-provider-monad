@@ -358,7 +358,9 @@ func (r *ResourceOrganization) ModifyPlan(ctx context.Context, req resource.Modi
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if !planName.IsUnknown() && !planName.Equal(state.Name) {
+	// An unknown name (built from a resource being replaced) may change at
+	// apply, which would replace the sub-organization; refuse it too.
+	if planName.IsUnknown() || !planName.Equal(state.Name) {
 		addDeletionProtectedError(&resp.Diagnostics, &state)
 	}
 }

@@ -27,7 +27,7 @@ Point an aliased provider at the sub-organization's `id`, and give resources ins
 
 The following arguments are required:
 
-* `name` - (Required) Name of the sub-organization: lowercase letters, digits and `-`, starting and ending with a letter or digit, at most 22 characters. The API stores it with a random four-character suffix; see `slug`. Changing `name` replaces the sub-organization, which `deletion_protection` refuses while it is `true`.
+* `name` - (Required) Name of the sub-organization: lowercase letters, digits and `-`, starting and ending with a letter or digit, at most 22 characters. The API stores it with a random four-character suffix; see `slug`. Changing `name` replaces the sub-organization, which `deletion_protection` refuses while it is `true`. That includes a `name` that is unknown until apply, such as one built from a resource that is being replaced: it might change, so a protected sub-organization refuses to plan until the name is known.
 
 The following arguments are optional:
 

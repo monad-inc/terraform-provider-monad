@@ -79,6 +79,13 @@ func TestOrganizationModifyPlanRefusesProtectedDestroyOrReplace(t *testing.T) {
 		return tftypes.NewValue(typ, vals)
 	}
 	null := tftypes.NewValue(typ, nil)
+	// A name built from a resource being replaced is unknown at plan time.
+	unknownName := func(protected bool) tftypes.Value {
+		var vals map[string]tftypes.Value
+		require.NoError(t, obj("acme", protected).As(&vals))
+		vals["name"] = tftypes.NewValue(tftypes.String, tftypes.UnknownValue)
+		return tftypes.NewValue(typ, vals)
+	}
 
 	cases := []struct {
 		name    string
@@ -89,6 +96,8 @@ func TestOrganizationModifyPlanRefusesProtectedDestroyOrReplace(t *testing.T) {
 		{"destroy protected", obj("acme", true), null, true},
 		{"replace protected", obj("acme", true), obj("acme2", true), true},
 		{"replace while unprotecting in same plan", obj("acme", true), obj("acme2", false), true},
+		{"unknown name protected", obj("acme", true), unknownName(true), true},
+		{"unknown name unprotected", obj("acme", false), unknownName(false), false},
 		{"in-place update protected", obj("acme", true), obj("acme", true), false},
 		{"destroy unprotected", obj("acme", false), null, false},
 		{"create", null, obj("acme", true), false},
