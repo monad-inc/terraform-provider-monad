@@ -40,10 +40,10 @@ resource "monad_storage_cost_rates" "this" {
 
 ## Argument Reference
 
-The following arguments are optional:
+At least one of `costs` and `output_costs` is required. An empty resource would take over every rate in the organization on its next refresh, and an apply would then set them all to `0`, so it fails at plan time instead. To stop managing rates, remove the resource; to stop managing them *and* keep their values, use a [`removed` block](https://developer.hashicorp.com/terraform/language/resources/syntax#removing-resources) with `destroy = false`.
 
-* `costs` - (Optional) Map of storage type (output type ID, such as `dev-null` or `kv-lookup`) to its default price in $/GB. Applies to every output of that type that has no entry in `output_costs`. Prices are `0`–`1000`, checked at plan time, and stored at single precision by the API.
-* `output_costs` - (Optional) Map of output ID to that output's own price. [See below](#output_costs). Keys are usually `monad_output.x.id`.
+* `costs` - (Optional) Map of storage type (output type ID, such as `dev-null` or `kv-lookup`) to its default price in $/GB. Applies to every output of that type that has no entry in `output_costs`. Prices are `0`–`1000` with at most six decimal places, the precision Monad stores; both are checked at plan time.
+* `output_costs` - (Optional) Map of output ID to that output's own price. [See below](#output_costs). Keys must be output IDs (UUIDs), usually `monad_output.x.id`; anything else fails at plan time.
 * `timeouts` - (Optional) Operation timeouts for this resource. [See below](#timeouts).
 
 ### `output_costs`
@@ -51,7 +51,7 @@ The following arguments are optional:
 Each value is an object with:
 
 * `storage_type` - (Required) The output's type ID, such as `dev-null`. Changing it clears the output's old rate before setting the new one.
-* `cost_per_gb` - (Required) Price in $/GB, `0`–`1000`.
+* `cost_per_gb` - (Required) Price in $/GB, `0`–`1000`, at most six decimal places.
 
 ## Attribute Reference
 

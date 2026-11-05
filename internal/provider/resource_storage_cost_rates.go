@@ -6,6 +6,9 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
+
+	"github.com/hashicorp/go-uuid"
 
 	"github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -55,6 +58,10 @@ type storageOutputCost struct {
 
 // maxCostPerGB is the API's upper bound (SetStorageTypeCost rejects more).
 const maxCostPerGB = 1000.0
+
+// maxCostDecimals is the precision the API stores a price at (DECIMAL(10, 6)).
+// A finer value would be rounded on write and read back as a diff every plan.
+const maxCostDecimals = 6
 
 func NewResourceStorageCostRates() resource.Resource {
 	return &ResourceStorageCostRates{}
@@ -122,12 +129,23 @@ func (r *ResourceStorageCostRates) Schema(ctx context.Context, req resource.Sche
 	}
 }
 
-// ValidateConfig enforces the API's 0–1000 $/GB range at plan time.
+// ValidateConfig checks at plan time what the API would otherwise reject or
+// half-apply: a price outside 0–1000 $/GB or finer than the API stores, and an
+// output_costs key that is not an output ID. It also requires at least one of
+// costs and output_costs, so that state with both null can only come from an
+// import (see Read).
 func (r *ResourceStorageCostRates) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
 	var data ResourceStorageCostRatesModel
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
+	}
+	if data.Costs.IsNull() && data.OutputCosts.IsNull() {
+		// Read treats state with both null as an import and takes over every
+		// rate in the organization; an apply would then zero them all.
+		resp.Diagnostics.AddAttributeError(path.Root("costs"), "No rates configured",
+			"Set at least one of costs or output_costs. To stop managing every rate, remove the resource "+
+				"(or use a removed block to keep the rates), rather than leaving it empty.")
 	}
 	check := func(p path.Path, v types.Float64) {
 		if v.IsNull() || v.IsUnknown() {
@@ -137,6 +155,11 @@ func (r *ResourceStorageCostRates) ValidateConfig(ctx context.Context, req resou
 		if f < 0 || f > maxCostPerGB || math.IsNaN(f) || math.IsInf(f, 0) {
 			resp.Diagnostics.AddAttributeError(p, "Cost out of range",
 				fmt.Sprintf("cost per GB must be between 0 and %.0f; got %v.", maxCostPerGB, f))
+			return
+		}
+		if costDecimals(f) > maxCostDecimals {
+			resp.Diagnostics.AddAttributeError(p, "Cost too precise",
+				fmt.Sprintf("cost per GB can have at most %d decimal places, the precision Monad stores; got %v.", maxCostDecimals, f))
 		}
 	}
 	if !data.Costs.IsNull() && !data.Costs.IsUnknown() {
@@ -150,6 +173,12 @@ func (r *ResourceStorageCostRates) ValidateConfig(ctx context.Context, req resou
 		var outs map[string]storageOutputCost
 		resp.Diagnostics.Append(data.OutputCosts.ElementsAs(ctx, &outs, false)...)
 		for k, o := range outs {
+			if _, err := uuid.ParseUUID(k); err != nil {
+				// Caught here because the API writes the costs entries before it
+				// reaches a bad output ID, then fails with a 500.
+				resp.Diagnostics.AddAttributeError(path.Root("output_costs").AtMapKey(k), "Invalid output ID",
+					fmt.Sprintf("output_costs is keyed by output ID (a UUID); %q is not one.", k))
+			}
 			check(path.Root("output_costs").AtMapKey(k).AtName("cost_per_gb"), o.CostPerGB)
 		}
 	}
@@ -422,6 +451,15 @@ func splitCostEntries(entries []monad.ModelsStorageTypeCostEntry) (map[string]fl
 func float32ToFloat64(f float32) float64 {
 	v, _ := strconv.ParseFloat(strconv.FormatFloat(float64(f), 'g', -1, 32), 64)
 	return v
+}
+
+// costDecimals counts the decimal places in f's shortest decimal form.
+func costDecimals(f float64) int {
+	s := strconv.FormatFloat(f, 'f', -1, 64)
+	if i := strings.IndexByte(s, '.'); i >= 0 {
+		return len(s) - i - 1
+	}
+	return 0
 }
 
 // sameCost compares two prices at the precision the API stores (float32).

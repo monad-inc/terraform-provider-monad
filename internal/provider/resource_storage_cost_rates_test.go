@@ -6,7 +6,10 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-go/tftypes"
 	monad "github.com/monad-inc/sdk/go"
 	"github.com/stretchr/testify/assert"
 )
@@ -46,4 +49,74 @@ func TestKeepNullIfEmpty(t *testing.T) {
 	assert.False(t, got.IsNull())
 	assert.Empty(t, got.Elements())
 	assert.False(t, d.HasError())
+}
+
+// TestStorageCostRatesValidateConfig pins the plan-time checks from the #47
+// review: an empty configuration (which Read would take for an import and an
+// apply would zero every rate in the organization), a price finer than the
+// API's DECIMAL(10, 6), and an output_costs key that is not an output ID (the
+// API writes the costs entries first, then fails with a 500).
+func TestStorageCostRatesValidateConfig(t *testing.T) {
+	ctx := context.Background()
+	r := &ResourceStorageCostRates{}
+	var sr resource.SchemaResponse
+	r.Schema(ctx, resource.SchemaRequest{}, &sr)
+	s := sr.Schema
+	typ := s.Type().TerraformType(ctx).(tftypes.Object)
+	costsT := typ.AttributeTypes["costs"]
+	outsT := typ.AttributeTypes["output_costs"]
+	outT := outsT.(tftypes.Map).ElementType
+
+	costs := func(kv map[string]float64) tftypes.Value {
+		m := map[string]tftypes.Value{}
+		for k, v := range kv {
+			m[k] = tftypes.NewValue(tftypes.Number, v)
+		}
+		return tftypes.NewValue(costsT, m)
+	}
+	outs := func(id string, cost float64) tftypes.Value {
+		return tftypes.NewValue(outsT, map[string]tftypes.Value{id: tftypes.NewValue(outT, map[string]tftypes.Value{
+			"storage_type": tftypes.NewValue(tftypes.String, "dev-null"),
+			"cost_per_gb":  tftypes.NewValue(tftypes.Number, cost),
+		})})
+	}
+	cfg := func(c, o tftypes.Value) tftypes.Value {
+		vals := map[string]tftypes.Value{}
+		for k, at := range typ.AttributeTypes {
+			vals[k] = tftypes.NewValue(at, nil)
+		}
+		vals["costs"], vals["output_costs"] = c, o
+		return tftypes.NewValue(typ, vals)
+	}
+	const outID = "6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b"
+	nullCosts, nullOuts := tftypes.NewValue(costsT, nil), tftypes.NewValue(outsT, nil)
+
+	cases := []struct {
+		name    string
+		config  tftypes.Value
+		wantErr bool
+	}{
+		{"costs only", cfg(costs(map[string]float64{"dev-null": 0.5}), nullOuts), false},
+		{"output_costs only", cfg(nullCosts, outs(outID, 0.25)), false},
+		{"empty costs map is still configured", cfg(costs(map[string]float64{}), nullOuts), false},
+		{"neither set", cfg(nullCosts, nullOuts), true},
+		{"six decimals", cfg(costs(map[string]float64{"dev-null": 0.001235}), nullOuts), false},
+		{"seven decimals", cfg(costs(map[string]float64{"dev-null": 0.0012345}), nullOuts), true},
+		{"output seven decimals", cfg(nullCosts, outs(outID, 0.1234567)), true},
+		{"out of range", cfg(costs(map[string]float64{"dev-null": 1000.5}), nullOuts), true},
+		{"output key not a UUID", cfg(nullCosts, outs("my-splunk-output", 0.25)), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &resource.ValidateConfigResponse{}
+			r.ValidateConfig(ctx, resource.ValidateConfigRequest{Config: tfsdk.Config{Schema: s, Raw: tc.config}}, resp)
+			assert.Equal(t, tc.wantErr, resp.Diagnostics.HasError(), resp.Diagnostics)
+		})
+	}
+}
+
+func TestCostDecimals(t *testing.T) {
+	for f, want := range map[float64]int{0: 0, 12: 0, 0.5: 1, 0.023: 3, 0.001235: 6, 0.0012345678: 10, 999.999999: 6} {
+		assert.Equal(t, want, costDecimals(f), "%v", f)
+	}
 }
