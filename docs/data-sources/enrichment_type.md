@@ -1,0 +1,52 @@
+---
+page_title: "monad_enrichment_type Data Source - monad"
+subcategory: ""
+description: |-
+  Describes the configuration schema of a enrichment type.
+---
+
+# Data Source: monad_enrichment_type
+
+Describes an enrichment type's configuration: every `settings` and `secrets` field a `monad_enrichment` of that type takes. The schema comes from the Monad API, so it is always the one the API will validate against.
+
+## Example Usage
+
+```terraform
+data "monad_enrichment_type" "kv" {
+  type_id = "kv-lookup"
+}
+
+output "kv_enrichment_settings" {
+  value = [for f in data.monad_enrichment_type.kv.settings : f.path]
+}
+```
+
+## Argument Reference
+
+* `type_id` - (Required) The enrichment type to describe, such as `kv-lookup`. An unknown ID fails with an error; the API reports most unknown type IDs as a server error, so check the spelling first.
+
+## Attribute Reference
+
+* `name` - Display name.
+* `description` - Description.
+* `vendor` - Vendor (the API's `house`).
+* `category` - Category.
+* `in_beta` - Whether the type is in beta.
+* `settings` - List of the `settings` fields, flattened and sorted by path. [See below](#field-elements).
+* `secrets` - List of the `secrets` fields, flattened and sorted by path. [See below](#field-elements).
+* `schema_json` - The full schema as the API returns it, JSON-encoded, for anything the lists do not express.
+
+### Field elements
+
+Each element of a field list has:
+
+* `path` - Dotted path. A nested field is `parent.child`. A `one_of` field's variants nest under the variant name (`metric_config.records.threshold`), matching how the configuration writes them, and its discriminator appears as `parent.<field>` with the variant names as `allowed_values`.
+* `name` - Display name.
+* `type` - Field type, such as `string`, `int`, `bool`, `array`, `object` or `one_of`.
+* `item_type` - Element type of an array field, such as `string`. Empty when the API gives none.
+* `sub_type` - A refinement of `type` that changes how the field is handled. Values the API uses include `monad_secret` (an object that holds a secret reference), `cron` (a cron schedule string), `rate_limit`, `url`, `duration` and `json`. Empty when the API gives none. Unlike `item_type`, it does not describe array elements.
+* `required` - Whether the field must be set.
+* `immutable` - Whether the field cannot change after creation.
+* `default` - Default value, JSON-encoded (use `jsondecode`); null when there is none.
+* `description` - What the field does.
+* `allowed_values` - Allowed values for an enum field; empty otherwise.
