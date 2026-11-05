@@ -72,6 +72,8 @@ This resource exports the following attributes in addition to the arguments abov
 * `slug` - The name as the API stored it, with its random suffix, such as `acme-161d`.
 * `parent_organization_id` - The parent organization: the provider's `organization_id`.
 * `billing_account_id` - Billing account, inherited from the parent.
+* `created_at` - When the sub-organization was created, as an RFC 3339 timestamp set by the API.
+* `updated_at` - When the sub-organization was last changed. Shown as `(known after apply)` whenever the resource has other changes, because every write moves it.
 
 ### Inputs and outputs
 
@@ -86,6 +88,8 @@ This resource exports the following attributes in addition to the arguments abov
 | `slug` | Output | `name` plus a random suffix |
 | `parent_organization_id` | Output | |
 | `billing_account_id` | Output | |
+| `created_at` | Output | Set by the API |
+| `updated_at` | Output | Changes on every write |
 
 ## Timeouts
 

@@ -64,6 +64,8 @@ func secretValues(t *testing.T, typ tftypes.Type, value, valueHash tftypes.Value
 		"id":          tftypes.NewValue(tftypes.String, "secret-id"),
 		"name":        tftypes.NewValue(tftypes.String, "example"),
 		"description": tftypes.NewValue(tftypes.String, nil),
+		"created_at":  tftypes.NewValue(tftypes.String, nil),
+		"updated_at":  tftypes.NewValue(tftypes.String, storedUpdatedAt),
 		"value":       value,
 		"value_hash":  valueHash,
 	})
@@ -149,6 +151,13 @@ func TestSecretModifyPlanDetectsRotation(t *testing.T) {
 			assert.Equal(t, tc.wantUnknown, got.IsUnknown(), "value_hash unknown")
 			if !tc.wantUnknown {
 				assert.Equal(t, storedHash, got.ValueString(), "hash preserved from state")
+			}
+
+			var updatedAt types.String
+			require.False(t, resp.Plan.GetAttribute(ctx, path.Root("updated_at"), &updatedAt).HasError())
+			assert.Equal(t, tc.wantUnknown, updatedAt.IsUnknown(), "updated_at unknown with value_hash")
+			if !tc.wantUnknown {
+				assert.Equal(t, storedUpdatedAt, updatedAt.ValueString(), "updated_at kept from state")
 			}
 		})
 	}

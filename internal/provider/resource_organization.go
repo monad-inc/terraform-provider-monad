@@ -55,6 +55,8 @@ type ResourceOrganizationModel struct {
 	ParentOrganizationID types.String   `tfsdk:"parent_organization_id"`
 	BillingAccountID     types.String   `tfsdk:"billing_account_id"`
 	DeletionProtection   types.Bool     `tfsdk:"deletion_protection"`
+	CreatedAt            types.String   `tfsdk:"created_at"`
+	UpdatedAt            types.String   `tfsdk:"updated_at"`
 }
 
 // The API's organization name rules (ValidateOrganizationName): a lowercase
@@ -104,7 +106,7 @@ func (r *ResourceOrganization) Schema(ctx context.Context, req resource.SchemaRe
 		Blocks: map[string]schema.Block{
 			"timeouts": timeouts.Block(ctx, timeouts.Opts{Create: true, Read: true, Update: true, Delete: true}),
 		},
-		Attributes: map[string]schema.Attribute{
+		Attributes: withComputedMeta(map[string]schema.Attribute{
 			"id": schema.StringAttribute{
 				Computed:            true,
 				MarkdownDescription: "ID of the sub-organization",
@@ -147,7 +149,7 @@ func (r *ResourceOrganization) Schema(ctx context.Context, req resource.SchemaRe
 				Default:             booldefault.StaticBool(true),
 				PlanModifiers:       []planmodifier.Bool{boolplanmodifier.UseStateForUnknown()},
 			},
-		},
+		}, false), // the API's organization model has no managed_by
 	}
 }
 
@@ -208,7 +210,8 @@ func (r *ResourceOrganization) Create(ctx context.Context, req resource.CreateRe
 
 	data.ID = types.StringValue(createdID)
 	if err == nil {
-		r.setComputed(&data, org.GetName(), org.GetFriendlyName(), org.GetParentOrganizationId(), org.GetBillingAccountId())
+		r.setComputed(&data, org.GetName(), org.GetFriendlyName(), org.GetParentOrganizationId(), org.GetBillingAccountId(),
+			org.GetCreatedAt(), org.GetUpdatedAt())
 	} else {
 		// Adopted after a timeout: read the computed fields back.
 		found, err := r.find(parentCtx, createdID, data.Name.ValueString())
@@ -216,7 +219,8 @@ func (r *ResourceOrganization) Create(ctx context.Context, req resource.CreateRe
 			resp.Diagnostics.AddError("Unable to read adopted sub-organization", fmt.Sprintf("%v", err))
 			return
 		}
-		r.setComputed(&data, found.GetName(), found.GetFriendlyName(), found.GetParentOrganizationId(), found.GetBillingAccountId())
+		r.setComputed(&data, found.GetName(), found.GetFriendlyName(), found.GetParentOrganizationId(), found.GetBillingAccountId(),
+			found.GetCreatedAt(), found.GetUpdatedAt())
 	}
 
 	tflog.Trace(ctx, "created a sub-organization")
@@ -225,13 +229,15 @@ func (r *ResourceOrganization) Create(ctx context.Context, req resource.CreateRe
 
 // setComputed fills the attributes the API decides. friendly_name is only
 // taken from the API when the plan left it unknown (omitted).
-func (r *ResourceOrganization) setComputed(data *ResourceOrganizationModel, slug, friendlyName, parent, billing string) {
+func (r *ResourceOrganization) setComputed(data *ResourceOrganizationModel, slug, friendlyName, parent, billing, createdAt, updatedAt string) {
 	data.Slug = types.StringValue(slug)
 	if data.FriendlyName.IsUnknown() || data.FriendlyName.IsNull() {
 		data.FriendlyName = types.StringValue(friendlyName)
 	}
 	data.ParentOrganizationID = types.StringValue(parent)
 	data.BillingAccountID = metaStringOrEmpty(billing)
+	data.CreatedAt = metaString(createdAt)
+	data.UpdatedAt = metaString(updatedAt)
 }
 
 func metaStringOrEmpty(v string) types.String {
@@ -280,6 +286,8 @@ func (r *ResourceOrganization) Read(ctx context.Context, req resource.ReadReques
 	data.Description = reconcileOptionalString(data.Description, org.GetDescription())
 	data.ParentOrganizationID = types.StringValue(org.GetParentOrganizationId())
 	data.BillingAccountID = metaStringOrEmpty(org.GetBillingAccountId())
+	data.CreatedAt = metaString(org.GetCreatedAt())
+	data.UpdatedAt = metaString(org.GetUpdatedAt())
 	if data.DeletionProtection.IsNull() {
 		data.DeletionProtection = types.BoolValue(true) // import: protected until said otherwise
 	}
@@ -301,7 +309,8 @@ func (r *ResourceOrganization) Update(ctx context.Context, req resource.UpdateRe
 	}
 
 	// deletion_protection is provider-side only; send a request only when an
-	// API field changed.
+	// API field changed. Without one, nothing moved updated_at, so keep it.
+	plan.UpdatedAt = state.UpdatedAt
 	if !plan.FriendlyName.Equal(state.FriendlyName) || !plan.Description.Equal(state.Description) {
 		description := plan.Description.ValueString() // "" clears it; omitted means "keep" to the API
 		request := monad.RoutesV3UpdateChildOrganizationRequest{Description: &description}
@@ -320,6 +329,7 @@ func (r *ResourceOrganization) Update(ctx context.Context, req resource.UpdateRe
 		if plan.FriendlyName.IsUnknown() || plan.FriendlyName.IsNull() {
 			plan.FriendlyName = types.StringValue(org.GetFriendlyName())
 		}
+		plan.UpdatedAt = metaString(org.GetUpdatedAt())
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)

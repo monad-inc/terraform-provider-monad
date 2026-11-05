@@ -169,6 +169,9 @@ The provider sends `config` exactly as written and compares it to the API's stor
 This resource exports the following attributes in addition to the arguments above:
 
 * `id` - UUID of the transform. Reference it from `monad_pipeline` nodes as `component_id`.
+* `created_at` - When the object was created, as an RFC 3339 timestamp set by the API.
+* `updated_at` - When the object was last changed. Shown as `(known after apply)` whenever the resource has other changes, because every write moves it.
+* `managed_by` - Who manages the object: `customer` for objects you create; `system` or `internal` for objects Monad maintains.
 
 ### Inputs and outputs
 
@@ -178,6 +181,9 @@ This resource exports the following attributes in addition to the arguments abov
 | `description` | Input | |
 | `config` | Input | Refreshed from the API on read; compared semantically |
 | `timeouts` | Input | Provider-side deadlines; never sent to the API |
+| `created_at` | Output | Set by the API |
+| `updated_at` | Output | Changes on every write |
+| `managed_by` | Output | `customer`, `system` or `internal` |
 | `id` | Output | |
 
 ## Timeouts

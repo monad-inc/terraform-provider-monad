@@ -15,6 +15,16 @@ breaking changes are released as minor version bumps.
   that would destroy or replace the sub-organization. Pair it with an aliased
   provider whose `organization_id` is the sub-organization's `id` to manage
   resources inside it.
+- **Read-only `created_at`, `updated_at` and `managed_by` on every resource
+  (ENG-11406)** — the API's bookkeeping fields, populated on create, read and
+  import (`monad_secret`, `monad_sso_connection`, `monad_api_key`,
+  `monad_role` and `monad_organization` have no `managed_by`).
+  `updated_at` shows as `(known after apply)` whenever a resource has other
+  changes, including a change to a write-only secret alone (rotating a
+  `monad_secret` value or a connector's `config.secrets`, or the first apply
+  after importing a connector with secrets), because every write moves it;
+  the other two keep their value.
+  Existing state fills them in on the next refresh without a diff.
 - **`monad_sso_connection` resource.** Manages a SAML SSO connection: `name`,
   `description`, `email_domains`, `public_name`, `session_timeout_minutes`
   and a `saml` block (`entity_id`, `metadata_url`). The connection holds no
@@ -42,6 +52,29 @@ breaking changes are released as minor version bumps.
   type_id`. The API caps conditions at three levels (edge operator, group,
   rules), so a group holds rules, not other groups. Additive: existing
   configurations and state are unchanged.
+- **`monad_api_key` resource (PRO-713).** Create, rename, rotate, import and
+  delete organization API keys. The token is returned by the API only at
+  create and regenerate, so it is a sensitive attribute stored in state.
+  Changing `expiration_time` regenerates the key in place (same id, new token,
+  old token revoked); changing `role_id` replaces it. An `expiration_time`
+  known only at apply, such as one derived from `time_rotating`, plans the
+  token as known after apply. A create that times out and is adopted is
+  regenerated immediately so state holds a usable token.
+- **`monad_role` resource and `monad_role` / `monad_permissions` data sources
+  (PRO-714).** `monad_role` manages a custom role, with permissions written as
+  slugs (`pipeline:read`) and resolved to the catalog's IDs; an unknown slug
+  fails at plan time with the valid list. At least one permission is required,
+  because the API cannot remove a role's last one. The built-in roles are
+  protected by the API, so `terraform import` refuses them; the `monad_role`
+  data source looks any role up by name instead, so `monad_api_key.role_id` no
+  longer needs a hard-coded UUID. `monad_permissions` lists the catalog.
+  These are the provider's first data sources.
+- **Lookup data sources for existing objects (PRO-719):** `monad_input`,
+  `monad_output`, `monad_transform`, `monad_enrichment`, `monad_pipeline` and
+  `monad_secret`, by `id` or exact `name`, so a configuration can reference an
+  object managed elsewhere without pasting its UUID. Components also expose
+  `pipeline_ids` (the pipelines that use them); pipelines expose `enabled`.
+  The secret data source returns metadata only, never the value.
 
 ### Fixed
 
